@@ -1,0 +1,23 @@
+# Alle Formulierungen werden exakt über inputs/operation_mapping.xlsx aufgelöst.
+# Kommentare und Leerzeilen beeinflussen den Testablauf nicht.
+
+TESTFALL: TC_DIAGNOSTIC_TIMING_001
+NAME: Diagnose mit expliziter Zeitsemantik
+TESTZIEL: Sofortprüfung, Warten bis zur Zeitgrenze und Überwachung klar unterscheiden.
+
+VORBEDINGUNGEN:
+10. Versorgung auf 13.5 V setzen
+
+TESTSCHRITTE:
+10. Unterspannung anlegen
+  AKTION: Versorgung auf 7000 mV setzen
+  ERWARTUNG 10: Fehler UNDERVOLTAGE in BCM ist inaktiv
+  ERWARTUNG 20: Auf Fehler UNDERVOLTAGE in BCM aktiv warten, maximal 500 ms, Prüfintervall 100 ms
+  ERWARTUNG 30: Fehler UNDERVOLTAGE in BCM bleibt 300 ms aktiv, Prüfintervall 100 ms
+
+20. Versorgung normalisieren
+  AKTION: Versorgung auf 13.5 V setzen
+  ERWARTUNG 10: Fehler UNDERVOLTAGE in BCM ist inaktiv
+
+NACHBEDINGUNGEN:
+10. Versorgung auf 13.5 V setzen

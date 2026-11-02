@@ -1,0 +1,15 @@
+{
+  "initial_supply": "13.5",
+  "controller": "BCM",
+  "diagnostic_code": "UNDERVOLTAGE",
+  "threshold": "9",
+  "activation_delay": "0.5",
+  "screens": {
+    "HOME": "Ready",
+    "SETTINGS": "Settings"
+  },
+  "initial_parameters": {
+    "GAIN": "0",
+    "LIMIT": "0"
+  }
+}

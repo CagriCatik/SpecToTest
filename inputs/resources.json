@@ -1,0 +1,9 @@
+{
+  "profile_id": "DEMO_RESOURCES_V1",
+  "resources": {
+    "controller": ["BCM"],
+    "diagnostic_code": ["UNDERVOLTAGE"],
+    "screen": ["HOME", "SETTINGS"],
+    "parameter": ["GAIN", "LIMIT"]
+  }
+}
