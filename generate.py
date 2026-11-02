@@ -1,34 +1,36 @@
-"""Deterministically compile text or Excel test cases into Python source."""
+"""Deterministically compile TXT test cases and TOML mappings into Python.
+
+Hexagonal Architecture CLI driver:
+- Inbound: reads TXT specs via text_parser adapter
+- Core: compiles cases via core.compiler, validates via core.profile & core.mapping
+- Outbound: renders Python test suite via python_emitter adapter
+"""
 import argparse
 import ast
 import importlib
 from pathlib import Path
 import sys
 
-from tcg.compiler import SPEC_SCHEMA, compile_cases
-from tcg.excel_input import read_rows, read_tables
-from tcg.mapping import MAPPING_COLUMNS, load_mappings
-from tcg.model import SpecError
-from tcg.profile import check_profile, load_profile
-from tcg.render import render_python
-from tcg.text_input import read_text_spec
+from tcg.adapters.inbound.text_parser import read_text_spec
+from tcg.adapters.outbound.python_emitter import render_python
+from tcg.core.compiler import compile_cases
+from tcg.core.mapping import load_mapping
+from tcg.core.model import SpecError
+from tcg.core.profile import check_profile, load_profile
 
 
 def read_specification(path):
-    suffix = path.suffix.lower()
-    if suffix == '.txt':
-        return read_text_spec(path)
-    if suffix == '.xlsx':
-        return read_tables(path, SPEC_SCHEMA, optional_empty=('Vorbedingungen', 'Nachbedingungen'))
-    raise SpecError(f'{path.name}: unsupported specification format; use .txt or .xlsx')
+    if path.suffix.lower() != '.txt':
+        raise SpecError(f'{path.name}: test specification must be a .txt file')
+    return read_text_spec(path)
 
 
-def generate(spec, mapping, resources, output, registry, runner_module):
+def generate(spec, mapping, resources, output, registry, runner_module='tcg.runtime.runner'):
     profile = load_profile(resources)
-    check_profile(profile, registry)
-    mappings = load_mappings(read_rows(mapping, 'Mapping', MAPPING_COLUMNS), registry)
+    mappings = load_mapping(mapping, registry)
     tables = read_specification(spec)
     cases = compile_cases(tables, mappings, profile, spec.name)
+    check_profile(profile, (step.contract for case in cases for step in case.all_steps()))
     source = render_python(cases, registry, runner_module)
     ast.parse(source)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -49,13 +51,13 @@ def load_registry(reference):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Deterministic text/Excel -> Python test compiler')
+    parser = argparse.ArgumentParser(description='Deterministic TXT + TOML -> Python test compiler')
     parser.add_argument('--spec', required=True, type=Path)
     parser.add_argument('--mapping', required=True, type=Path)
     parser.add_argument('--resources', required=True, type=Path)
     parser.add_argument('--output', required=True, type=Path)
-    parser.add_argument('--registry', required=True, help='Trusted Python registry as module:attribute')
-    parser.add_argument('--runner', required=True, help='Trusted runner module used by generated __main__')
+    parser.add_argument('--registry', default='operations:REGISTRY', help='Trusted Python registry as module:attribute (default: operations:REGISTRY)')
+    parser.add_argument('--runner', default='tcg.runtime.runner', help='Runner module used by generated __main__ (default: tcg.runtime.runner)')
     args = parser.parse_args()
     try:
         registry = load_registry(args.registry)

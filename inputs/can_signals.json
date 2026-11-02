@@ -1,0 +1,386 @@
+{
+  "database": "Powertrain_BMS_CAN",
+  "baudrate": 500000,
+  "messages": {
+    "Power_01": {
+      "id": "0x050",
+      "dlc": 8,
+      "cycle_time_ms": 100,
+      "comment": "Status Spannungsversorgung und Klemmen"
+    },
+    "Engine_01": {
+      "id": "0x100",
+      "dlc": 8,
+      "cycle_time_ms": 10,
+      "comment": "Motor- und Drehzahl-Botschaft"
+    },
+    "Brake_01": {
+      "id": "0x120",
+      "dlc": 8,
+      "cycle_time_ms": 20,
+      "comment": "Fahrzeuggeschwindigkeit und Bremsendaten"
+    },
+    "Body_01": {
+      "id": "0x200",
+      "dlc": 8,
+      "cycle_time_ms": 50,
+      "comment": "Karosserie- und Türkontakte"
+    },
+    "BMS_01_State": {
+      "id": "0x300",
+      "dlc": 8,
+      "cycle_time_ms": 20,
+      "comment": "BMS Betriebszustand und Schütze"
+    },
+    "BMS_02_Pack": {
+      "id": "0x301",
+      "dlc": 8,
+      "cycle_time_ms": 20,
+      "comment": "Batteriepack Gesamtspannung, Strom und SOC/SOH"
+    },
+    "BMS_03_Limits": {
+      "id": "0x302",
+      "dlc": 8,
+      "cycle_time_ms": 50,
+      "comment": "Lade- und Entladestrombegrenzungen (Derating)"
+    },
+    "BMS_04_Cells": {
+      "id": "0x303",
+      "dlc": 8,
+      "cycle_time_ms": 50,
+      "comment": "Zellspannungs- und Zelltemperaturüberwachung"
+    },
+    "BMS_05_Safety": {
+      "id": "0x304",
+      "dlc": 8,
+      "cycle_time_ms": 100,
+      "comment": "Sicherheitsüberwachung: Isolationswiderstand und Interlock"
+    }
+  },
+  "signals": {
+    "EngineSpeed": {
+      "message": "Engine_01",
+      "start_bit": 16,
+      "length": 16,
+      "unit": "rpm",
+      "factor": 1,
+      "offset": 0,
+      "min": 0,
+      "max": 8000,
+      "default": 0,
+      "comment": "Motordrehzahl in Umdrehungen pro Minute"
+    },
+    "VehicleSpeed": {
+      "message": "Brake_01",
+      "start_bit": 0,
+      "length": 16,
+      "unit": "km/h",
+      "factor": 1,
+      "offset": 0,
+      "min": 0,
+      "max": 300,
+      "default": 0,
+      "comment": "Fahrzeuggeschwindigkeit in km/h"
+    },
+    "BrakePedalPosition": {
+      "message": "Brake_01",
+      "start_bit": 16,
+      "length": 8,
+      "unit": "%",
+      "factor": 1,
+      "offset": 0,
+      "min": 0,
+      "max": 100,
+      "default": 0,
+      "comment": "Bremspedalstellung in Prozent"
+    },
+    "Clamp15Status": {
+      "message": "Power_01",
+      "start_bit": 0,
+      "length": 1,
+      "unit": "",
+      "factor": 1,
+      "offset": 0,
+      "min": 0,
+      "max": 1,
+      "default": 0,
+      "comment": "Zündungsstatus Klemme 15 (0=aus, 1=an)"
+    },
+    "DoorContactStatus": {
+      "message": "Body_01",
+      "start_bit": 0,
+      "length": 1,
+      "unit": "",
+      "factor": 1,
+      "offset": 0,
+      "min": 0,
+      "max": 1,
+      "default": 0,
+      "comment": "Türkontaktstatus (0=geschlossen, 1=offen)"
+    },
+    "BatteryVoltageCAN": {
+      "message": "Power_01",
+      "start_bit": 8,
+      "length": 8,
+      "unit": "V",
+      "factor": 0.1,
+      "offset": 0,
+      "min": 0,
+      "max": 24,
+      "default": 13.5,
+      "comment": "Batteriespannung über CAN übertragen"
+    },
+    "BMSState": {
+      "message": "BMS_01_State",
+      "start_bit": 0,
+      "length": 4,
+      "unit": "",
+      "factor": 1,
+      "offset": 0,
+      "min": 0,
+      "max": 10,
+      "default": 1,
+      "comment": "BMS Zustand (0=Init, 1=Standby, 2=Precharge, 3=DriveReady, 4=Charge, 5=Fault)"
+    },
+    "HVMainPosContactState": {
+      "message": "BMS_01_State",
+      "start_bit": 4,
+      "length": 2,
+      "unit": "",
+      "factor": 1,
+      "offset": 0,
+      "min": 0,
+      "max": 2,
+      "default": 0,
+      "comment": "Hauptschütz HV+ Status (0=Offen, 1=Geschlossen, 2=Fehler)"
+    },
+    "HVMainNegContactState": {
+      "message": "BMS_01_State",
+      "start_bit": 6,
+      "length": 2,
+      "unit": "",
+      "factor": 1,
+      "offset": 0,
+      "min": 0,
+      "max": 2,
+      "default": 0,
+      "comment": "Hauptschütz HV- Status (0=Offen, 1=Geschlossen, 2=Fehler)"
+    },
+    "PrechargeContactState": {
+      "message": "BMS_01_State",
+      "start_bit": 8,
+      "length": 2,
+      "unit": "",
+      "factor": 1,
+      "offset": 0,
+      "min": 0,
+      "max": 2,
+      "default": 0,
+      "comment": "Vorladeschütz Status (0=Offen, 1=Geschlossen, 2=Fehler)"
+    },
+    "InterlockStatus": {
+      "message": "BMS_01_State",
+      "start_bit": 10,
+      "length": 1,
+      "unit": "",
+      "factor": 1,
+      "offset": 0,
+      "min": 0,
+      "max": 1,
+      "default": 1,
+      "comment": "HV-Interlock Schleife (0=Offen/Unterbrochen, 1=Geschlossen)"
+    },
+    "CrashSignal": {
+      "message": "BMS_01_State",
+      "start_bit": 11,
+      "length": 1,
+      "unit": "",
+      "factor": 1,
+      "offset": 0,
+      "min": 0,
+      "max": 1,
+      "default": 0,
+      "comment": "Crash-Signal (0=Kein Crash, 1=Crash erkannt)"
+    },
+    "PackVoltage": {
+      "message": "BMS_02_Pack",
+      "start_bit": 0,
+      "length": 16,
+      "unit": "V",
+      "factor": 0.1,
+      "offset": 0,
+      "min": 0,
+      "max": 1000,
+      "default": 400.0,
+      "comment": "Gesamtspannung der Hochvoltbatterie in Volt"
+    },
+    "PackCurrent": {
+      "message": "BMS_02_Pack",
+      "start_bit": 16,
+      "length": 16,
+      "unit": "A",
+      "factor": 0.1,
+      "offset": 0,
+      "min": -1000,
+      "max": 1000,
+      "default": 0.0,
+      "comment": "Batteriestrom in Ampere (negativ=Laden, positiv=Entladen)"
+    },
+    "PackSOC": {
+      "message": "BMS_02_Pack",
+      "start_bit": 32,
+      "length": 8,
+      "unit": "%",
+      "factor": 0.5,
+      "offset": 0,
+      "min": 0,
+      "max": 100,
+      "default": 80.0,
+      "comment": "Ladezustand (State of Charge) in Prozent"
+    },
+    "PackSOH": {
+      "message": "BMS_02_Pack",
+      "start_bit": 40,
+      "length": 8,
+      "unit": "%",
+      "factor": 0.5,
+      "offset": 0,
+      "min": 0,
+      "max": 100,
+      "default": 98.0,
+      "comment": "Gesundheitszustand (State of Health) in Prozent"
+    },
+    "MaxChargeCurrent": {
+      "message": "BMS_03_Limits",
+      "start_bit": 0,
+      "length": 16,
+      "unit": "A",
+      "factor": 0.1,
+      "offset": 0,
+      "min": 0,
+      "max": 500,
+      "default": 150.0,
+      "comment": "Maximal zulässiger Ladestrom (Derating-Grenze) in Ampere"
+    },
+    "MaxDischargeCurrent": {
+      "message": "BMS_03_Limits",
+      "start_bit": 16,
+      "length": 16,
+      "unit": "A",
+      "factor": 0.1,
+      "offset": 0,
+      "min": 0,
+      "max": 800,
+      "default": 300.0,
+      "comment": "Maximal zulässiger Entladestrom (Derating-Grenze) in Ampere"
+    },
+    "CellVoltageMax": {
+      "message": "BMS_04_Cells",
+      "start_bit": 0,
+      "length": 16,
+      "unit": "V",
+      "factor": 0.001,
+      "offset": 0,
+      "min": 0,
+      "max": 5,
+      "default": 3.70,
+      "comment": "Höchste gemessene Einzelzellspannung im Pack in Volt"
+    },
+    "CellVoltageMin": {
+      "message": "BMS_04_Cells",
+      "start_bit": 16,
+      "length": 16,
+      "unit": "V",
+      "factor": 0.001,
+      "offset": 0,
+      "min": 0,
+      "max": 5,
+      "default": 3.70,
+      "comment": "Niedrigste gemessene Einzelzellspannung im Pack in Volt"
+    },
+    "CellVoltageDelta": {
+      "message": "BMS_04_Cells",
+      "start_bit": 32,
+      "length": 16,
+      "unit": "mV",
+      "factor": 1,
+      "offset": 0,
+      "min": 0,
+      "max": 2000,
+      "default": 0,
+      "comment": "Spannungsdifferenz zwischen höchster und niedrigster Zelle in mV"
+    },
+    "CellTempMax": {
+      "message": "BMS_04_Cells",
+      "start_bit": 48,
+      "length": 8,
+      "unit": "°C",
+      "factor": 1,
+      "offset": -40,
+      "min": -40,
+      "max": 120,
+      "default": 25.0,
+      "comment": "Höchste gemessene Zelltemperatur in Grad Celsius"
+    },
+    "CellTempMin": {
+      "message": "BMS_04_Cells",
+      "start_bit": 56,
+      "length": 8,
+      "unit": "°C",
+      "factor": 1,
+      "offset": -40,
+      "min": -40,
+      "max": 120,
+      "default": 23.0,
+      "comment": "Niedrigste gemessene Zelltemperatur in Grad Celsius"
+    },
+    "BalancingActive": {
+      "message": "BMS_04_Cells",
+      "start_bit": 64,
+      "length": 1,
+      "unit": "",
+      "factor": 1,
+      "offset": 0,
+      "min": 0,
+      "max": 1,
+      "default": 0,
+      "comment": "Zell-Balancing Status (0=Inaktiv, 1=Aktiv)"
+    },
+    "CoolingRequest": {
+      "message": "BMS_04_Cells",
+      "start_bit": 65,
+      "length": 2,
+      "unit": "",
+      "factor": 1,
+      "offset": 0,
+      "min": 0,
+      "max": 2,
+      "default": 0,
+      "comment": "Kühlanforderung an Thermomanagement (0=Aus, 1=Stufe 1, 2=Stufe 2)"
+    },
+    "IsolationResistance": {
+      "message": "BMS_05_Safety",
+      "start_bit": 0,
+      "length": 16,
+      "unit": "kOhm",
+      "factor": 1,
+      "offset": 0,
+      "min": 0,
+      "max": 5000,
+      "default": 1500.0,
+      "comment": "Gemessener Isolationswiderstand zwischen HV und Chassis in kOhm"
+    },
+    "IsolationStatus": {
+      "message": "BMS_05_Safety",
+      "start_bit": 16,
+      "length": 2,
+      "unit": "",
+      "factor": 1,
+      "offset": 0,
+      "min": 0,
+      "max": 2,
+      "default": 0,
+      "comment": "Isolationsüberwachungs-Status (0=Normal, 1=Warnung, 2=Fehler)"
+    }
+  }
+}

@@ -10,6 +10,43 @@
   },
   "initial_parameters": {
     "GAIN": "0",
-    "LIMIT": "0"
+    "LIMIT": "0",
+    "CELL_OV_THRESHOLD": "4250",
+    "CELL_UV_THRESHOLD": "2800",
+    "PRECHARGE_TIMEOUT_MS": "500"
+  },
+  "fault_codes": {
+    "BCM": ["UNDERVOLTAGE"],
+    "BCM1": ["DTC00173"],
+    "BMS": ["DTC_BMS_CELL_OVERVOLTAGE", "DTC_BMS_CELL_UNDERVOLTAGE", "DTC_BMS_OVERTEMPERATURE", "DTC_BMS_PRECHARGE_FAIL", "DTC_BMS_ISOLATION_FAULT", "DTC_BMS_INTERLOCK_OPEN"]
+  },
+  "can_signals": {
+    "EngineSpeed": "0",
+    "VehicleSpeed": "0",
+    "BrakePedalPosition": "0",
+    "Clamp15Status": "0",
+    "DoorContactStatus": "0",
+    "BatteryVoltageCAN": "13.5",
+    "BMSState": "1",
+    "HVMainPosContactState": "0",
+    "HVMainNegContactState": "0",
+    "PrechargeContactState": "0",
+    "InterlockStatus": "1",
+    "CrashSignal": "0",
+    "PackVoltage": "400.0",
+    "PackCurrent": "0.0",
+    "PackSOC": "80.0",
+    "PackSOH": "98.0",
+    "MaxChargeCurrent": "150.0",
+    "MaxDischargeCurrent": "300.0",
+    "CellVoltageMax": "3.70",
+    "CellVoltageMin": "3.70",
+    "CellVoltageDelta": "0",
+    "CellTempMax": "25.0",
+    "CellTempMin": "23.0",
+    "BalancingActive": "0",
+    "CoolingRequest": "0",
+    "IsolationResistance": "1500.0",
+    "IsolationStatus": "0"
   }
 }

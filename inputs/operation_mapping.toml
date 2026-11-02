@@ -1,0 +1,161 @@
+[[mapping]]
+id = "MAP_SUPPLY"
+template = "Versorgung auf {spannung} setzen"
+operation = "set_supply"
+parameters = { spannung = "value" }
+
+[[mapping]]
+id = "MAP_WAIT"
+template = "Warte {dauer}"
+operation = "wait"
+parameters = { dauer = "seconds" }
+
+[[mapping]]
+id = "MAP_DIAGNOSTIC_NOW"
+template = "Fehler {code} in {steuergeraet} ist {status}"
+operation = "expect_diagnostic"
+parameters = { code = "code", steuergeraet = "controller", status = "active" }
+
+[[mapping]]
+id = "MAP_DIAGNOSTIC_WITHIN"
+template = "Auf Fehler {code} in {steuergeraet} {status} warten, maximal {zeitgrenze}, Prüfintervall {intervall}"
+operation = "expect_diagnostic_within"
+parameters = { code = "code", steuergeraet = "controller", status = "active", zeitgrenze = "timeout", intervall = "interval" }
+
+[[mapping]]
+id = "MAP_DIAGNOSTIC_MONITOR"
+template = "Fehler {code} in {steuergeraet} bleibt {dauer} {status}, Prüfintervall {intervall}"
+operation = "monitor_diagnostic"
+parameters = { code = "code", steuergeraet = "controller", dauer = "duration", status = "active", intervall = "interval" }
+
+[[mapping]]
+id = "MAP_SCREEN"
+template = "Bildschirm {bildschirm} auswählen"
+operation = "select_screen"
+parameters = { bildschirm = "screen" }
+
+[[mapping]]
+id = "MAP_SCREEN_TEXT"
+template = "Anzeige zeigt {text}"
+operation = "expect_screen_text"
+parameters = { text = "text" }
+
+[[mapping]]
+id = "MAP_WRITE_PARAMETER"
+template = "Parameter {parameter} auf {wert} schreiben"
+operation = "write_parameter"
+parameters = { parameter = "parameter", wert = "value" }
+
+[[mapping]]
+id = "MAP_EXPECT_PARAMETER"
+template = "Parameter {parameter} ist {wert}"
+operation = "expect_parameter"
+parameters = { parameter = "parameter", wert = "value" }
+
+[[mapping]]
+id = "MAP_IGNITION"
+template = "Zündung {zustand}"
+operation = "set_ignition"
+parameters = { zustand = "state" }
+
+[[mapping]]
+id = "MAP_CLEAR_FAULT_MEMORY"
+template = "Fehlerspeicher {ecu} löschen"
+operation = "clear_fault_memory"
+parameters = { ecu = "ecu" }
+
+[[mapping]]
+id = "MAP_CLEAR_FSP"
+template = "FSP {ecu} löschen"
+operation = "clear_fault_memory"
+parameters = { ecu = "ecu" }
+
+[[mapping]]
+id = "MAP_BATTERY_VOLTAGE"
+template = "Batteriespannung = {spannung}"
+operation = "set_battery_voltage"
+parameters = { spannung = "value" }
+
+[[mapping]]
+id = "MAP_READ_FAULT_MEMORY"
+template = "Fehlerspeicher {ecu} lesen"
+operation = "read_fault_memory"
+parameters = { ecu = "ecu" }
+
+[[mapping]]
+id = "MAP_FAULT_ENTRY_PRESENT"
+template = "Fehlerspeichereintrag {code} eingetragen"
+operation = "expect_fault_memory_entry"
+parameters = { code = "code" }
+
+[[mapping]]
+id = "MAP_FAULT_ENTRY_PRESENT_ECU"
+template = "Fehlerspeichereintrag {code} in {ecu} eingetragen"
+operation = "expect_fault_memory_entry"
+parameters = { code = "code", ecu = "ecu" }
+
+[[mapping]]
+id = "MAP_FAULT_MEMORY_EMPTY"
+template = "Fehlerspeicher {ecu} ist leer"
+operation = "expect_fault_memory_empty"
+parameters = { ecu = "ecu" }
+
+[[mapping]]
+id = "MAP_CAN_SET_SIGNAL"
+template = "CAN-Signal {signal} auf {wert} setzen"
+operation = "set_can_signal"
+parameters = { signal = "signal", wert = "value" }
+
+[[mapping]]
+id = "MAP_CAN_SET_SIGNAL_EQUALS"
+template = "CAN-Signal {signal} = {wert}"
+operation = "set_can_signal"
+parameters = { signal = "signal", wert = "value" }
+
+[[mapping]]
+id = "MAP_CAN_EXPECT_SIGNAL"
+template = "CAN-Signal {signal} ist {wert}"
+operation = "expect_can_signal"
+parameters = { signal = "signal", wert = "value" }
+
+[[mapping]]
+id = "MAP_CAN_EXPECT_SIGNAL_TOLERANCE"
+template = "CAN-Signal {signal} ist {wert} ± {toleranz}"
+operation = "expect_can_signal_tolerance"
+parameters = { signal = "signal", wert = "value", toleranz = "tolerance" }
+
+[[mapping]]
+id = "MAP_CAN_EXPECT_SIGNAL_RANGE"
+template = "CAN-Signal {signal} liegt im Bereich [{min_wert}, {max_wert}]"
+operation = "expect_can_signal_range"
+parameters = { signal = "signal", min_wert = "min_value", max_wert = "max_value" }
+
+[[mapping]]
+id = "MAP_CAN_EXPECT_SIGNAL_GTE"
+template = "CAN-Signal {signal} >= {wert}"
+operation = "expect_can_signal_min"
+parameters = { signal = "signal", wert = "min_value" }
+
+[[mapping]]
+id = "MAP_CAN_EXPECT_SIGNAL_LTE"
+template = "CAN-Signal {signal} <= {wert}"
+operation = "expect_can_signal_max"
+parameters = { signal = "signal", wert = "max_value" }
+
+[[mapping]]
+id = "MAP_CAN_EXPECT_SIGNAL_GT"
+template = "CAN-Signal {signal} > {wert}"
+operation = "expect_can_signal_greater"
+parameters = { signal = "signal", wert = "value" }
+
+[[mapping]]
+id = "MAP_CAN_EXPECT_SIGNAL_LT"
+template = "CAN-Signal {signal} < {wert}"
+operation = "expect_can_signal_less"
+parameters = { signal = "signal", wert = "value" }
+
+[[mapping]]
+id = "MAP_CAN_WAIT_SIGNAL"
+template = "Auf CAN-Signal {signal} == {wert} warten, maximal {zeitgrenze}, Prüfintervall {intervall}"
+operation = "wait_can_signal"
+parameters = { signal = "signal", wert = "value", zeitgrenze = "timeout", intervall = "interval" }

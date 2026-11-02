@@ -1,9 +1,60 @@
 {
   "profile_id": "DEMO_RESOURCES_V1",
   "resources": {
-    "controller": ["BCM"],
-    "diagnostic_code": ["UNDERVOLTAGE"],
-    "screen": ["HOME", "SETTINGS"],
-    "parameter": ["GAIN", "LIMIT"]
+    "controller": [
+      "BCM",
+      "BCM1",
+      "BMS"
+    ],
+    "diagnostic_code": [
+      "UNDERVOLTAGE",
+      "DTC00173",
+      "DTC_BMS_CELL_OVERVOLTAGE",
+      "DTC_BMS_CELL_UNDERVOLTAGE",
+      "DTC_BMS_OVERTEMPERATURE",
+      "DTC_BMS_PRECHARGE_FAIL",
+      "DTC_BMS_ISOLATION_FAULT",
+      "DTC_BMS_INTERLOCK_OPEN"
+    ],
+    "screen": [
+      "HOME",
+      "SETTINGS"
+    ],
+    "parameter": [
+      "GAIN",
+      "LIMIT",
+      "CELL_OV_THRESHOLD",
+      "CELL_UV_THRESHOLD",
+      "PRECHARGE_TIMEOUT_MS"
+    ],
+    "can_signal": [
+      "EngineSpeed",
+      "VehicleSpeed",
+      "BrakePedalPosition",
+      "Clamp15Status",
+      "DoorContactStatus",
+      "BatteryVoltageCAN",
+      "BMSState",
+      "HVMainPosContactState",
+      "HVMainNegContactState",
+      "PrechargeContactState",
+      "InterlockStatus",
+      "CrashSignal",
+      "PackVoltage",
+      "PackCurrent",
+      "PackSOC",
+      "PackSOH",
+      "MaxChargeCurrent",
+      "MaxDischargeCurrent",
+      "CellVoltageMax",
+      "CellVoltageMin",
+      "CellVoltageDelta",
+      "CellTempMax",
+      "CellTempMin",
+      "BalancingActive",
+      "CoolingRequest",
+      "IsolationResistance",
+      "IsolationStatus"
+    ]
   }
 }

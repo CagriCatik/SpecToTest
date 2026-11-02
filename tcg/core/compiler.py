@@ -1,0 +1,231 @@
+"""Neutral parsed specification -> validated test-case models."""
+import re
+
+from .mapping import resolve, single_line_text
+from .model import (
+    BreakStatement,
+    Loop,
+    PHASES,
+    SourceRef,
+    SpecError,
+    Step,
+    TestCase,
+    VariableRef,
+)
+
+SPEC_SECTIONS = ('Testfaelle', 'Vorbedingungen', 'Ablauf', 'Nachbedingungen', 'Erwartungen')
+TEST_ID = re.compile(r'TC_[A-Z0-9_]{1,60}')
+FLOW_PHASES = frozenset({'ACTION', 'EXPECTED'})
+
+
+def _metadata(rows):
+    cases, problems, identifiers = [], [], {}
+    for line, data in rows:
+        where = f'Testfaelle!{line}'
+        try:
+            test_id = single_line_text(data['Test_ID'], f'{where} Test_ID')
+            if not TEST_ID.fullmatch(test_id):
+                raise SpecError(f'{where}: Test_ID {test_id!r} must match {TEST_ID.pattern}')
+            if test_id in identifiers:
+                raise SpecError(f'{where}: duplicate Test_ID {test_id!r} (first at line {identifiers[test_id]})')
+            identifiers[test_id] = line
+            name = single_line_text(data['Name'], f'{where} Name')
+            objective = data['Testziel']
+            if objective is not None:
+                objective = single_line_text(objective, f'{where} Testziel')
+            cases.append({'id': test_id, 'name': name, 'objective': objective, 'line': line,
+                          'raw_spec': data.get('raw_spec')})
+        except SpecError as error:
+            problems.extend(error.problems)
+    if problems:
+        raise SpecError(problems)
+    return cases
+
+
+def _check_references(sections, known_ids):
+    problems = []
+    for section, rows in sections.items():
+        if section == 'Testfaelle':
+            continue
+        for line, data in rows:
+            if data['Test_ID'] not in known_ids:
+                problems.append(f'{section}!{line}: unknown Test_ID {data["Test_ID"]!r}')
+    if problems:
+        raise SpecError(problems)
+
+
+def _make_id(prefix, used_ids):
+    candidate = prefix
+    if candidate not in used_ids:
+        used_ids.add(candidate)
+        return candidate
+    idx = 2
+    while f'{prefix}_{idx}' in used_ids:
+        idx += 1
+    candidate = f'{prefix}_{idx}'
+    used_ids.add(candidate)
+    return candidate
+
+
+def _compile_command(execution_id, requested_phase, test_step, text, line, section,
+                     source_file, mappings, profile, scope=()):
+    source = SourceRef(source_file, section, line)
+    where = str(source)
+    text = single_line_text(text, f'{where} text')
+    try:
+        mapping, arguments = resolve(text, mappings, profile)
+    except SpecError as error:
+        raise SpecError([f'{where} ({execution_id}): {problem}' for problem in error.problems]) from None
+
+    # Verify that any VariableRef used in arguments is defined in the current scope
+    for param_name, param_val in arguments:
+        if isinstance(param_val, VariableRef):
+            if param_val.name not in scope:
+                raise SpecError(f'{where} ({execution_id}): variable {param_val.name!r} is undefined; in scope: {sorted(scope)}')
+
+    if requested_phase is None:
+        phases = mapping.contract.phases & FLOW_PHASES
+        if len(phases) != 1:
+            allowed = ', '.join(sorted(mapping.contract.phases))
+            raise SpecError(f'{where} ({execution_id}): operation {mapping.contract.id} must allow exactly one '
+                            f'of ACTION or EXPECTED for ABLAUF; contract allows: {allowed}')
+        phase = next(iter(phases))
+    else:
+        phase = requested_phase
+        if phase not in mapping.contract.phases:
+            allowed = ', '.join(item for item in PHASES if item in mapping.contract.phases)
+            raise SpecError(f'{where} ({execution_id}): operation {mapping.contract.id} ({mapping.id}) '
+                            f'is not allowed in {phase}; allowed: {allowed}')
+
+    return Step(execution_id, phase, test_step, None, None, mapping.contract, arguments,
+                mapping.id, source, text)
+
+
+def _compile_loop(data, line, section, phase, source_file, mappings, profile, used_ids, parent_scope=()):
+    var = data['variable']
+    scope = set(parent_scope) | {var}
+    source = SourceRef(source_file, section, line)
+    body_steps = []
+    for body_line, body_item in data['body']:
+        item_type = body_item.get('type', 'command')
+        step_label = body_item.get('Schritt')
+        if item_type == 'command':
+            prefix = f"{'P' if phase == 'PRECONDITION' else 'C' if phase == 'CLEANUP' else 'S'}{step_label or len(body_steps)+1}"
+            exec_id = _make_id(prefix, used_ids)
+            step = _compile_command(exec_id, phase, step_label, body_item['Befehl'], body_line,
+                                   section, source_file, mappings, profile, scope=scope)
+            body_steps.append(step)
+        elif item_type == 'break':
+            cond = body_item.get('condition')
+            if cond is not None and cond.left not in scope:
+                raise SpecError(f'{source_file}:{body_line} [{section}]: variable {cond.left!r} in BREAK condition is undefined; in scope: {sorted(scope)}')
+            body_steps.append(BreakStatement(condition=cond, step_label=step_label,
+                                             source=SourceRef(source_file, section, body_line)))
+        elif item_type == 'loop':
+            nested = _compile_loop(body_item, body_line, section, phase, source_file, mappings, profile, used_ids, parent_scope=scope)
+            body_steps.append(nested)
+    return Loop(variable=var, items=tuple(data['items']), body=tuple(body_steps),
+                step_label=data.get('Schritt'), source=source, phase=phase)
+
+
+def _compile_case(metadata, sections, mappings, profile, source_file):
+    test_id = metadata['id']
+    used_ids = set()
+    steps = []
+
+    # 1. Preconditions
+    precond_rows = [row for row in sections['Vorbedingungen'] if row[1]['Test_ID'] == test_id]
+    for line, data in precond_rows:
+        if data.get('type') == 'loop':
+            steps.append(_compile_loop(data, line, 'Vorbedingungen', 'PRECONDITION', source_file, mappings, profile, used_ids))
+        else:
+            step_num = data.get('Schritt') if data.get('Schritt') is not None else data.get('Reihenfolge')
+            exec_id = _make_id(f'P{step_num}', used_ids)
+            steps.append(_compile_command(exec_id, 'PRECONDITION', data.get('Schritt'), data['Befehl'], line,
+                                         'Vorbedingungen', source_file, mappings, profile))
+
+    # 2. Flow & Expected
+    flow_rows = [row for row in sections['Ablauf'] if row[1]['Test_ID'] == test_id]
+    if not flow_rows:
+        raise SpecError(f'{test_id}: at least one numbered command in ABLAUF is required')
+
+    expected_rows = [row for row in sections.get('Erwartungen', []) if row[1]['Test_ID'] == test_id]
+    expected_by_step = {}
+    unassociated_expected = []
+    for exp_line, exp_data in expected_rows:
+        s_num = exp_data.get('Schritt')
+        if s_num is not None:
+            expected_by_step.setdefault(s_num, []).append((exp_line, exp_data))
+        else:
+            unassociated_expected.append((exp_line, exp_data))
+
+    for line, data in flow_rows:
+        if data.get('type') == 'loop':
+            steps.append(_compile_loop(data, line, 'Ablauf', 'ACTION', source_file, mappings, profile, used_ids))
+            continue
+        step_num = data.get('Schritt')
+        if step_num in expected_by_step:
+            exec_id = _make_id(f'S{step_num}.A' if step_num is not None else f'S{len(steps)+1}.A', used_ids)
+            step = _compile_command(exec_id, 'ACTION', step_num, data['Befehl'], line,
+                                    'Ablauf', source_file, mappings, profile)
+            steps.append(step)
+            for exp_line, exp_data in expected_by_step[step_num]:
+                exp_exec_id = _make_id(f'S{step_num}.E' if step_num is not None else f'S{len(steps)+1}.E', used_ids)
+                exp_step = _compile_command(exp_exec_id, 'EXPECTED', step_num, exp_data['Befehl'], exp_line,
+                                            'Erwartungen', source_file, mappings, profile)
+                steps.append(exp_step)
+            del expected_by_step[step_num]
+        else:
+            exec_id = _make_id(f'S{step_num}' if step_num is not None else f'S{len(steps)+1}', used_ids)
+            step = _compile_command(exec_id, None, step_num, data['Befehl'], line,
+                                    'Ablauf', source_file, mappings, profile)
+            steps.append(step)
+
+    for remaining_list in expected_by_step.values():
+        for exp_line, exp_data in remaining_list:
+            s_num = exp_data.get('Schritt')
+            exp_exec_id = _make_id(f'S{s_num}.E' if s_num is not None else f'S{len(steps)+1}.E', used_ids)
+            exp_step = _compile_command(exp_exec_id, 'EXPECTED', s_num, exp_data['Befehl'], exp_line,
+                                        'Erwartungen', source_file, mappings, profile)
+            steps.append(exp_step)
+
+    for exp_line, exp_data in unassociated_expected:
+        exp_exec_id = _make_id(f'S{len(steps)+1}.E', used_ids)
+        exp_step = _compile_command(exp_exec_id, 'EXPECTED', None, exp_data['Befehl'], exp_line,
+                                    'Erwartungen', source_file, mappings, profile)
+        steps.append(exp_step)
+
+    # 3. Postconditions (Cleanup)
+    cleanup_rows = [row for row in sections['Nachbedingungen'] if row[1]['Test_ID'] == test_id]
+    for line, data in cleanup_rows:
+        if data.get('type') == 'loop':
+            steps.append(_compile_loop(data, line, 'Nachbedingungen', 'CLEANUP', source_file, mappings, profile, used_ids))
+        else:
+            step_num = data.get('Schritt') if data.get('Schritt') is not None else data.get('Reihenfolge')
+            exec_id = _make_id(f'C{step_num}', used_ids)
+            steps.append(_compile_command(exec_id, 'CLEANUP', data.get('Schritt'), data['Befehl'], line,
+                                         'Nachbedingungen', source_file, mappings, profile))
+
+    return TestCase(test_id, metadata['name'], metadata['objective'], profile.profile_id,
+                    tuple(steps), raw_spec=metadata.get('raw_spec'))
+
+
+def compile_cases(sections, mappings, profile, source_file):
+    """Validate all sections and return cases in specification order."""
+    sections = dict(sections)
+    sections.setdefault('Erwartungen', [])
+    missing = set(SPEC_SECTIONS) - set(sections)
+    extra = set(sections) - set(SPEC_SECTIONS)
+    if missing or extra:
+        raise SpecError(f'invalid specification sections: missing={sorted(missing)}, extra={sorted(extra)}')
+    metadata = _metadata(sections['Testfaelle'])
+    _check_references(sections, {item['id'] for item in metadata})
+    cases, problems = [], []
+    for item in metadata:
+        try:
+            cases.append(_compile_case(item, sections, mappings, profile, source_file))
+        except SpecError as error:
+            problems.extend(error.problems)
+    if problems:
+        raise SpecError(problems)
+    return tuple(cases)

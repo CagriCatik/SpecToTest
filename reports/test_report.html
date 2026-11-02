@@ -1,0 +1,1018 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SpecToTest — HiL Test Bench Execution Report</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --card-border: #334155;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --pass: #10b981;
+      --pass-bg: rgba(16, 185, 129, 0.15);
+      --fail: #ef4444;
+      --fail-bg: rgba(239, 68, 68, 0.15);
+      --error: #f59e0b;
+      --error-bg: rgba(245, 158, 11, 0.15);
+      --accent: #3b82f6;
+      --accent-hover: #2563eb;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background-color: var(--bg);
+      color: var(--text-main);
+      padding: 24px;
+      line-height: 1.5;
+    }
+    .container { max-width: 1200px; margin: 0 auto; }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 24px;
+      border-bottom: 1px solid var(--card-border);
+      margin-bottom: 24px;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+    h1 { font-size: 24px; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 10px; }
+    .badge {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .badge-pass { background: var(--pass-bg); color: var(--pass); border: 1px solid var(--pass); }
+    .badge-fail { background: var(--fail-bg); color: var(--fail); border: 1px solid var(--fail); }
+    .badge-error { background: var(--error-bg); color: var(--error); border: 1px solid var(--error); }
+    .meta-bar { font-size: 13px; color: var(--text-muted); display: flex; gap: 16px; flex-wrap: wrap; }
+
+    /* KPI Cards */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .kpi-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 20px;
+      position: relative;
+      overflow: hidden;
+    }
+    .kpi-card .title { font-size: 13px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; }
+    .kpi-card .val { font-size: 32px; font-weight: 700; margin-top: 6px; }
+    .kpi-card .sub { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+    .kpi-pass .val { color: var(--pass); }
+    .kpi-fail .val { color: var(--fail); }
+    .kpi-error .val { color: var(--error); }
+
+    /* Progress bar */
+    .progress-bar {
+      height: 10px;
+      background: #334155;
+      border-radius: 9999px;
+      overflow: hidden;
+      display: flex;
+      margin-bottom: 24px;
+    }
+    .progress-fill-pass { background: var(--pass); height: 100%; }
+    .progress-fill-fail { background: var(--fail); height: 100%; }
+    .progress-fill-error { background: var(--error); height: 100%; }
+
+    /* Controls */
+    .controls-bar {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+    .filter-buttons { display: flex; gap: 8px; }
+    .btn {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      color: var(--text-main);
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .btn:hover { border-color: var(--accent); }
+    .btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .search-input {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      color: var(--text-main);
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      min-width: 260px;
+      outline: none;
+    }
+    .search-input:focus { border-color: var(--accent); }
+
+    /* Test Case List */
+    .test-list { display: flex; flex-direction: column; gap: 12px; }
+    .test-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      overflow: hidden;
+      transition: border-color 0.15s ease;
+    }
+    .test-card:hover { border-color: #475569; }
+    .test-header {
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      gap: 16px;
+      user-select: none;
+    }
+    .test-title-group { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .test-id { font-size: 15px; font-weight: 600; font-family: monospace; }
+    .test-meta { font-size: 13px; color: var(--text-muted); display: flex; align-items: center; gap: 12px; }
+    .chevron { transition: transform 0.2s ease; color: var(--text-muted); }
+    .test-card.open .chevron { transform: rotate(180deg); }
+
+    /* Details Drawer */
+    .test-body {
+      display: none;
+      padding: 20px;
+      border-top: 1px solid var(--card-border);
+      background: #151f30;
+      font-size: 13px;
+    }
+    .test-card.open .test-body { display: block; }
+    .section-title {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--accent);
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .error-banner {
+      background: var(--fail-bg);
+      border: 1px solid var(--fail);
+      color: #fca5a5;
+      padding: 12px 16px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+      font-family: monospace;
+      font-size: 13px;
+    }
+    pre.spec-box {
+      background: #0b1120;
+      border: 1px solid #1e293b;
+      padding: 14px;
+      border-radius: 8px;
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      font-size: 12px;
+      color: #cbd5e1;
+      white-space: pre-wrap;
+      max-height: 280px;
+      overflow-y: auto;
+      margin-bottom: 16px;
+    }
+
+    /* Trace Table */
+    table.trace-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      margin-top: 8px;
+    }
+    table.trace-table th {
+      text-align: left;
+      padding: 8px 12px;
+      background: #0f172a;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--card-border);
+      font-weight: 600;
+    }
+    table.trace-table td {
+      padding: 7px 12px;
+      border-bottom: 1px solid rgba(51, 65, 85, 0.4);
+      font-family: monospace;
+    }
+    table.trace-table tr:hover td { background: rgba(59, 130, 246, 0.05); }
+    .trace-time { color: var(--accent); width: 100px; }
+    .trace-op { color: #e2e8f0; font-weight: 600; width: 180px; }
+    .trace-details { color: #94a3b8; word-break: break-all; }
+
+    footer {
+      margin-top: 40px;
+      padding-top: 20px;
+      border-top: 1px solid var(--card-border);
+      text-align: center;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div>
+        <h1>
+          <span>⚡</span>
+          <span>SpecToTest — HiL Test Bench Execution Report</span>
+        </h1>
+        <div class="meta-bar" style="margin-top: 6px;">
+          <span>Prüfstands-Adapter: <strong>Vector CANoe / CANalyzer (VectorDummyBench)</strong></span>
+          <span>•</span>
+          <span>Generiert am: <strong>02.11.2026 23:00:21</strong></span>
+          <span>•</span>
+          <span>Gesamtdauer: <strong>0.001 s</strong></span>
+        </div>
+      </div>
+      <div>
+        <button class="btn" onclick="window.print()">Drucken / PDF</button>
+      </div>
+    </header>
+
+    <!-- KPI Grid -->
+    <div class="kpi-grid">
+      <div class="kpi-card">
+        <div class="title">Testfälle Gesamt</div>
+        <div class="val">12</div>
+        <div class="sub">100% ausgeführt</div>
+      </div>
+      <div class="kpi-card kpi-pass">
+        <div class="title">Erfolgreich (Pass)</div>
+        <div class="val">12</div>
+        <div class="sub">100.0% Erfolgsrate</div>
+      </div>
+      <div class="kpi-card kpi-fail">
+        <div class="title">Fehlgeschlagen (Fail)</div>
+        <div class="val">0</div>
+        <div class="sub">0.0% Check-Fehler</div>
+      </div>
+      <div class="kpi-card kpi-error">
+        <div class="title">Laufzeitfehler (Error)</div>
+        <div class="val">0</div>
+        <div class="sub">Ausnahmen</div>
+      </div>
+    </div>
+
+    <!-- Visual Progress Bar -->
+    <div class="progress-bar">
+      <div class="progress-fill-pass" style="width: 100.0%;"></div>
+      <div class="progress-fill-fail" style="width: 0.0%;"></div>
+      <div class="progress-fill-error" style="width: 0.0%;"></div>
+    </div>
+
+    <!-- Controls -->
+    <div class="controls-bar">
+      <div class="filter-buttons">
+        <button class="btn active" onclick="filterTests('all', this)">Alle (12)</button>
+        <button class="btn" onclick="filterTests('PASS', this)">Pass (12)</button>
+        <button class="btn" onclick="filterTests('FAIL', this)">Fail (0)</button>
+        <button class="btn" onclick="filterTests('ERROR', this)">Error (0)</button>
+      </div>
+      <input type="text" id="searchInput" class="search-input" placeholder="Nach Test-ID suchen..." onkeyup="searchTests()">
+    </div>
+
+    <!-- Test List -->
+    <div class="test-list" id="testList">
+      
+    <div class="test-card" data-status="PASS" data-testid="TC_01_UNDERVOLTAGE_RECOVERY">
+      <div class="test-header" onclick="toggleCard(this.parentElement)">
+        <div class="test-title-group">
+          <span class="badge badge-pass">PASS</span>
+          <span class="test-id">TC_01_UNDERVOLTAGE_RECOVERY</span>
+        </div>
+        <div class="test-meta">
+          <span>12 Schritte</span>
+          <span>•</span>
+          <span>0.000 s</span>
+          <span class="chevron">▼</span>
+        </div>
+      </div>
+      <div class="test-body">
+        
+        
+        <div class="section-title">Original-Spezifikation (.txt)</div>
+        <pre class="spec-box">Original Test Specification:
+========================================================================
+Precondition
+10. Zündung an
+20. Fehlerspeicher BCM1 löschen
+30. Batteriespannung = 13.8V
+
+Action
+40. Batteriespannung = 7000mV
+50. Warte 1 s
+60. Fehlerspeicher BCM1 lesen
+60. Fehlerspeichereintrag DTC00173 eingetragen
+70. Batteriespannung = 13.8V
+80. Warte 500 ms
+
+Postcondition
+90. Batteriespannung = 13.8V
+100. Zündung aus
+110. FSP BCM1 löschen
+========================================================================</pre>
+        
+        
+        <div class="section-title" style="margin-top: 14px;">Prüfstands-Ausführungs-Trace (12 Aktionen)</div>
+        <table class="trace-table">
+          <thead>
+            <tr><th>Sim-Zeit</th><th>Operation</th><th>Parameter / Werte</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_ignition</td><td class='trace-details'>{&#x27;state&#x27;: &#x27;True&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>clear_fault_memory</td><td class='trace-details'>{&#x27;ecu&#x27;: &#x27;BCM1&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_supply</td><td class='trace-details'>{&#x27;value&#x27;: &#x27;13.8&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_supply</td><td class='trace-details'>{&#x27;value&#x27;: &#x27;7&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>wait</td><td class='trace-details'>{&#x27;seconds&#x27;: &#x27;1&#x27;}</td></tr><tr><td class='trace-time'>1.000 s</td><td class='trace-op'>read_fault_memory</td><td class='trace-details'>{&#x27;ecu&#x27;: &#x27;BCM1&#x27;, &#x27;returned_entries&#x27;: &quot;[&#x27;DTC00173&#x27;]&quot;}</td></tr><tr><td class='trace-time'>1.000 s</td><td class='trace-op'>read_fault_memory</td><td class='trace-details'>{&#x27;ecu&#x27;: &#x27;BCM1&#x27;, &#x27;returned_entries&#x27;: &quot;[&#x27;DTC00173&#x27;]&quot;}</td></tr><tr><td class='trace-time'>1.000 s</td><td class='trace-op'>set_supply</td><td class='trace-details'>{&#x27;value&#x27;: &#x27;13.8&#x27;}</td></tr><tr><td class='trace-time'>1.000 s</td><td class='trace-op'>wait</td><td class='trace-details'>{&#x27;seconds&#x27;: &#x27;0.5&#x27;}</td></tr><tr><td class='trace-time'>1.500 s</td><td class='trace-op'>set_supply</td><td class='trace-details'>{&#x27;value&#x27;: &#x27;13.8&#x27;}</td></tr><tr><td class='trace-time'>1.500 s</td><td class='trace-op'>set_ignition</td><td class='trace-details'>{&#x27;state&#x27;: &#x27;False&#x27;}</td></tr><tr><td class='trace-time'>1.500 s</td><td class='trace-op'>clear_fault_memory</td><td class='trace-details'>{&#x27;ecu&#x27;: &#x27;BCM1&#x27;}</td></tr>
+          </tbody>
+        </table>
+        
+      </div>
+    </div>
+    
+    <div class="test-card" data-status="PASS" data-testid="TC_02_HMI_LOOP_VERIFICATION">
+      <div class="test-header" onclick="toggleCard(this.parentElement)">
+        <div class="test-title-group">
+          <span class="badge badge-pass">PASS</span>
+          <span class="test-id">TC_02_HMI_LOOP_VERIFICATION</span>
+        </div>
+        <div class="test-meta">
+          <span>9 Schritte</span>
+          <span>•</span>
+          <span>0.000 s</span>
+          <span class="chevron">▼</span>
+        </div>
+      </div>
+      <div class="test-body">
+        
+        
+        <div class="section-title">Original-Spezifikation (.txt)</div>
+        <pre class="spec-box">Original Test Specification:
+========================================================================
+Precondition
+10. Bildschirm HOME auswählen
+20. Parameter GAIN auf 0 schreiben
+
+Action
+30. Bildschirm SETTINGS auswählen
+30. Anzeige zeigt &quot;Settings&quot;
+40. Parameter GAIN auf 42 schreiben
+40. Parameter GAIN ist 42
+50: FOR (step;[10, 20, 30])
+
+Postcondition
+60. Parameter GAIN auf 0 schreiben
+70. Bildschirm HOME auswählen
+========================================================================</pre>
+        
+        
+        <div class="section-title" style="margin-top: 14px;">Prüfstands-Ausführungs-Trace (9 Aktionen)</div>
+        <table class="trace-table">
+          <thead>
+            <tr><th>Sim-Zeit</th><th>Operation</th><th>Parameter / Werte</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class='trace-time'>0.000 s</td><td class='trace-op'>select_screen</td><td class='trace-details'>{&#x27;screen&#x27;: &#x27;HOME&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>write_parameter</td><td class='trace-details'>{&#x27;parameter&#x27;: &#x27;GAIN&#x27;, &#x27;value&#x27;: &#x27;0&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>select_screen</td><td class='trace-details'>{&#x27;screen&#x27;: &#x27;SETTINGS&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>write_parameter</td><td class='trace-details'>{&#x27;parameter&#x27;: &#x27;GAIN&#x27;, &#x27;value&#x27;: &#x27;42&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>read_parameter</td><td class='trace-details'>{&#x27;parameter&#x27;: &#x27;GAIN&#x27;, &#x27;value&#x27;: &#x27;42&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>wait</td><td class='trace-details'>{&#x27;seconds&#x27;: &#x27;0.1&#x27;}</td></tr><tr><td class='trace-time'>0.100 s</td><td class='trace-op'>wait</td><td class='trace-details'>{&#x27;seconds&#x27;: &#x27;0.1&#x27;}</td></tr><tr><td class='trace-time'>0.200 s</td><td class='trace-op'>write_parameter</td><td class='trace-details'>{&#x27;parameter&#x27;: &#x27;GAIN&#x27;, &#x27;value&#x27;: &#x27;0&#x27;}</td></tr><tr><td class='trace-time'>0.200 s</td><td class='trace-op'>select_screen</td><td class='trace-details'>{&#x27;screen&#x27;: &#x27;HOME&#x27;}</td></tr>
+          </tbody>
+        </table>
+        
+      </div>
+    </div>
+    
+    <div class="test-card" data-status="PASS" data-testid="TC_03_DIAGNOSTIC_POWERCYCLE">
+      <div class="test-header" onclick="toggleCard(this.parentElement)">
+        <div class="test-title-group">
+          <span class="badge badge-pass">PASS</span>
+          <span class="test-id">TC_03_DIAGNOSTIC_POWERCYCLE</span>
+        </div>
+        <div class="test-meta">
+          <span>13 Schritte</span>
+          <span>•</span>
+          <span>0.000 s</span>
+          <span class="chevron">▼</span>
+        </div>
+      </div>
+      <div class="test-body">
+        
+        
+        <div class="section-title">Original-Spezifikation (.txt)</div>
+        <pre class="spec-box">Original Test Specification:
+========================================================================
+Precondition
+10. Zündung an
+20. Fehlerspeicher BCM löschen
+30. Fehlerspeicher BCM1 löschen
+
+Action
+40. Batteriespannung = 7000mV
+50. Fehlerspeicher BCM1 lesen
+50. Fehlerspeichereintrag DTC00173 eingetragen
+
+Postcondition
+60. Batteriespannung = 13.8V
+70. Zündung aus
+70: FOR (iter;[1, 2])
+  71. Warte iter
+END FOR
+80. Zündung an
+90. FSP BCM1 löschen
+100. Zündung aus
+========================================================================</pre>
+        
+        
+        <div class="section-title" style="margin-top: 14px;">Prüfstands-Ausführungs-Trace (13 Aktionen)</div>
+        <table class="trace-table">
+          <thead>
+            <tr><th>Sim-Zeit</th><th>Operation</th><th>Parameter / Werte</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_ignition</td><td class='trace-details'>{&#x27;state&#x27;: &#x27;True&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>clear_fault_memory</td><td class='trace-details'>{&#x27;ecu&#x27;: &#x27;BCM&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>clear_fault_memory</td><td class='trace-details'>{&#x27;ecu&#x27;: &#x27;BCM1&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_supply</td><td class='trace-details'>{&#x27;value&#x27;: &#x27;7&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>read_fault_memory</td><td class='trace-details'>{&#x27;ecu&#x27;: &#x27;BCM1&#x27;, &#x27;returned_entries&#x27;: &quot;[&#x27;DTC00173&#x27;]&quot;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>read_fault_memory</td><td class='trace-details'>{&#x27;ecu&#x27;: &#x27;BCM1&#x27;, &#x27;returned_entries&#x27;: &quot;[&#x27;DTC00173&#x27;]&quot;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_supply</td><td class='trace-details'>{&#x27;value&#x27;: &#x27;13.8&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_ignition</td><td class='trace-details'>{&#x27;state&#x27;: &#x27;False&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>wait</td><td class='trace-details'>{&#x27;seconds&#x27;: &#x27;1&#x27;}</td></tr><tr><td class='trace-time'>1.000 s</td><td class='trace-op'>wait</td><td class='trace-details'>{&#x27;seconds&#x27;: &#x27;2&#x27;}</td></tr><tr><td class='trace-time'>3.000 s</td><td class='trace-op'>set_ignition</td><td class='trace-details'>{&#x27;state&#x27;: &#x27;True&#x27;}</td></tr><tr><td class='trace-time'>3.000 s</td><td class='trace-op'>clear_fault_memory</td><td class='trace-details'>{&#x27;ecu&#x27;: &#x27;BCM1&#x27;}</td></tr><tr><td class='trace-time'>3.000 s</td><td class='trace-op'>set_ignition</td><td class='trace-details'>{&#x27;state&#x27;: &#x27;False&#x27;}</td></tr>
+          </tbody>
+        </table>
+        
+      </div>
+    </div>
+    
+    <div class="test-card" data-status="PASS" data-testid="TC_04_PARAMETER_LIMITS_SWEEP">
+      <div class="test-header" onclick="toggleCard(this.parentElement)">
+        <div class="test-title-group">
+          <span class="badge badge-pass">PASS</span>
+          <span class="test-id">TC_04_PARAMETER_LIMITS_SWEEP</span>
+        </div>
+        <div class="test-meta">
+          <span>14 Schritte</span>
+          <span>•</span>
+          <span>0.000 s</span>
+          <span class="chevron">▼</span>
+        </div>
+      </div>
+      <div class="test-body">
+        
+        
+        <div class="section-title">Original-Spezifikation (.txt)</div>
+        <pre class="spec-box">Original Test Specification:
+========================================================================
+Precondition
+10. Bildschirm HOME auswählen
+20. Parameter LIMIT auf 0 schreiben
+30. Parameter GAIN auf 0 schreiben
+
+Action
+40. Parameter LIMIT auf 50 schreiben
+50. Parameter GAIN auf 25 schreiben
+60. Bildschirm SETTINGS auswählen
+60. Anzeige zeigt &quot;Settings&quot;
+70: FOR (v;[10, 20, 30])
+70. Parameter LIMIT ist 20
+
+Postcondition
+80. Parameter LIMIT auf 0 schreiben
+90. Parameter GAIN auf 0 schreiben
+100. Bildschirm HOME auswählen
+========================================================================</pre>
+        
+        
+        <div class="section-title" style="margin-top: 14px;">Prüfstands-Ausführungs-Trace (14 Aktionen)</div>
+        <table class="trace-table">
+          <thead>
+            <tr><th>Sim-Zeit</th><th>Operation</th><th>Parameter / Werte</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class='trace-time'>0.000 s</td><td class='trace-op'>select_screen</td><td class='trace-details'>{&#x27;screen&#x27;: &#x27;HOME&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>write_parameter</td><td class='trace-details'>{&#x27;parameter&#x27;: &#x27;LIMIT&#x27;, &#x27;value&#x27;: &#x27;0&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>write_parameter</td><td class='trace-details'>{&#x27;parameter&#x27;: &#x27;GAIN&#x27;, &#x27;value&#x27;: &#x27;0&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>write_parameter</td><td class='trace-details'>{&#x27;parameter&#x27;: &#x27;LIMIT&#x27;, &#x27;value&#x27;: &#x27;50&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>write_parameter</td><td class='trace-details'>{&#x27;parameter&#x27;: &#x27;GAIN&#x27;, &#x27;value&#x27;: &#x27;25&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>select_screen</td><td class='trace-details'>{&#x27;screen&#x27;: &#x27;SETTINGS&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>write_parameter</td><td class='trace-details'>{&#x27;parameter&#x27;: &#x27;LIMIT&#x27;, &#x27;value&#x27;: &#x27;10&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>wait</td><td class='trace-details'>{&#x27;seconds&#x27;: &#x27;0.1&#x27;}</td></tr><tr><td class='trace-time'>0.100 s</td><td class='trace-op'>write_parameter</td><td class='trace-details'>{&#x27;parameter&#x27;: &#x27;LIMIT&#x27;, &#x27;value&#x27;: &#x27;20&#x27;}</td></tr><tr><td class='trace-time'>0.100 s</td><td class='trace-op'>wait</td><td class='trace-details'>{&#x27;seconds&#x27;: &#x27;0.1&#x27;}</td></tr><tr><td class='trace-time'>0.200 s</td><td class='trace-op'>read_parameter</td><td class='trace-details'>{&#x27;parameter&#x27;: &#x27;LIMIT&#x27;, &#x27;value&#x27;: &#x27;20&#x27;}</td></tr><tr><td class='trace-time'>0.200 s</td><td class='trace-op'>write_parameter</td><td class='trace-details'>{&#x27;parameter&#x27;: &#x27;LIMIT&#x27;, &#x27;value&#x27;: &#x27;0&#x27;}</td></tr><tr><td class='trace-time'>0.200 s</td><td class='trace-op'>write_parameter</td><td class='trace-details'>{&#x27;parameter&#x27;: &#x27;GAIN&#x27;, &#x27;value&#x27;: &#x27;0&#x27;}</td></tr><tr><td class='trace-time'>0.200 s</td><td class='trace-op'>select_screen</td><td class='trace-details'>{&#x27;screen&#x27;: &#x27;HOME&#x27;}</td></tr>
+          </tbody>
+        </table>
+        
+      </div>
+    </div>
+    
+    <div class="test-card" data-status="PASS" data-testid="TC_05_DIAGNOSTIC_TIMING_UNDERVOLTAGE">
+      <div class="test-header" onclick="toggleCard(this.parentElement)">
+        <div class="test-title-group">
+          <span class="badge badge-pass">PASS</span>
+          <span class="test-id">TC_05_DIAGNOSTIC_TIMING_UNDERVOLTAGE</span>
+        </div>
+        <div class="test-meta">
+          <span>16 Schritte</span>
+          <span>•</span>
+          <span>0.000 s</span>
+          <span class="chevron">▼</span>
+        </div>
+      </div>
+      <div class="test-body">
+        
+        
+        <div class="section-title">Original-Spezifikation (.txt)</div>
+        <pre class="spec-box">Original Test Specification:
+========================================================================
+Precondition
+10. Zündung an
+20. Versorgung auf 13.5 V setzen
+30. Fehlerspeicher BCM löschen
+
+Action
+40. Versorgung auf 7000 mV setzen
+50. Fehler UNDERVOLTAGE in BCM ist inaktiv
+60. Auf Fehler UNDERVOLTAGE in BCM aktiv warten, maximal 1 s, Prüfintervall 100 ms
+70. Fehler UNDERVOLTAGE in BCM bleibt 300 ms aktiv, Prüfintervall 100 ms
+80. Versorgung auf 13.5 V setzen
+90. Fehler UNDERVOLTAGE in BCM ist inaktiv
+
+Postcondition
+100. Versorgung auf 13.5 V setzen
+110. Fehlerspeicher BCM löschen
+120. Zündung aus
+========================================================================</pre>
+        
+        
+        <div class="section-title" style="margin-top: 14px;">Prüfstands-Ausführungs-Trace (16 Aktionen)</div>
+        <table class="trace-table">
+          <thead>
+            <tr><th>Sim-Zeit</th><th>Operation</th><th>Parameter / Werte</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_ignition</td><td class='trace-details'>{&#x27;state&#x27;: &#x27;True&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_supply</td><td class='trace-details'>{&#x27;value&#x27;: &#x27;13.5&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>clear_fault_memory</td><td class='trace-details'>{&#x27;ecu&#x27;: &#x27;BCM&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_supply</td><td class='trace-details'>{&#x27;value&#x27;: &#x27;7&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>wait</td><td class='trace-details'>{&#x27;seconds&#x27;: &#x27;0.1&#x27;}</td></tr><tr><td class='trace-time'>0.100 s</td><td class='trace-op'>wait</td><td class='trace-details'>{&#x27;seconds&#x27;: &#x27;0.1&#x27;}</td></tr><tr><td class='trace-time'>0.200 s</td><td class='trace-op'>wait</td><td class='trace-details'>{&#x27;seconds&#x27;: &#x27;0.1&#x27;}</td></tr><tr><td class='trace-time'>0.300 s</td><td class='trace-op'>wait</td><td class='trace-details'>{&#x27;seconds&#x27;: &#x27;0.1&#x27;}</td></tr><tr><td class='trace-time'>0.400 s</td><td class='trace-op'>wait</td><td class='trace-details'>{&#x27;seconds&#x27;: &#x27;0.1&#x27;}</td></tr><tr><td class='trace-time'>0.500 s</td><td class='trace-op'>wait</td><td class='trace-details'>{&#x27;seconds&#x27;: &#x27;0.1&#x27;}</td></tr><tr><td class='trace-time'>0.600 s</td><td class='trace-op'>wait</td><td class='trace-details'>{&#x27;seconds&#x27;: &#x27;0.1&#x27;}</td></tr><tr><td class='trace-time'>0.700 s</td><td class='trace-op'>wait</td><td class='trace-details'>{&#x27;seconds&#x27;: &#x27;0.1&#x27;}</td></tr><tr><td class='trace-time'>0.800 s</td><td class='trace-op'>set_supply</td><td class='trace-details'>{&#x27;value&#x27;: &#x27;13.5&#x27;}</td></tr><tr><td class='trace-time'>0.800 s</td><td class='trace-op'>set_supply</td><td class='trace-details'>{&#x27;value&#x27;: &#x27;13.5&#x27;}</td></tr><tr><td class='trace-time'>0.800 s</td><td class='trace-op'>clear_fault_memory</td><td class='trace-details'>{&#x27;ecu&#x27;: &#x27;BCM&#x27;}</td></tr><tr><td class='trace-time'>0.800 s</td><td class='trace-op'>set_ignition</td><td class='trace-details'>{&#x27;state&#x27;: &#x27;False&#x27;}</td></tr>
+          </tbody>
+        </table>
+        
+      </div>
+    </div>
+    
+    <div class="test-card" data-status="PASS" data-testid="TC_06_CAN_SIGNAL_TRANSMISSION">
+      <div class="test-header" onclick="toggleCard(this.parentElement)">
+        <div class="test-title-group">
+          <span class="badge badge-pass">PASS</span>
+          <span class="test-id">TC_06_CAN_SIGNAL_TRANSMISSION</span>
+        </div>
+        <div class="test-meta">
+          <span>16 Schritte</span>
+          <span>•</span>
+          <span>0.000 s</span>
+          <span class="chevron">▼</span>
+        </div>
+      </div>
+      <div class="test-body">
+        
+        
+        <div class="section-title">Original-Spezifikation (.txt)</div>
+        <pre class="spec-box">Original Test Specification:
+========================================================================
+Precondition
+10. Zündung an
+20. CAN-Signal Clamp15Status auf 1 setzen
+30. CAN-Signal EngineSpeed auf 0 rpm setzen
+40. CAN-Signal VehicleSpeed auf 0 km/h setzen
+
+Action
+50. CAN-Signal EngineSpeed auf 2500 rpm setzen
+50. CAN-Signal EngineSpeed ist 2500 rpm
+60. CAN-Signal VehicleSpeed auf 50 km/h setzen
+70: FOR (spd;[60, 80, 100])
+70. CAN-Signal VehicleSpeed ist 80 km/h
+
+Postcondition
+80. CAN-Signal VehicleSpeed auf 0 km/h setzen
+90. CAN-Signal EngineSpeed auf 0 rpm setzen
+100. CAN-Signal Clamp15Status auf 0 setzen
+110. Zündung aus
+========================================================================</pre>
+        
+        
+        <div class="section-title" style="margin-top: 14px;">Prüfstands-Ausführungs-Trace (16 Aktionen)</div>
+        <table class="trace-table">
+          <thead>
+            <tr><th>Sim-Zeit</th><th>Operation</th><th>Parameter / Werte</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_ignition</td><td class='trace-details'>{&#x27;state&#x27;: &#x27;True&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;Clamp15Status&#x27;, &#x27;value&#x27;: &#x27;1&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;EngineSpeed&#x27;, &#x27;value&#x27;: &#x27;0&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;VehicleSpeed&#x27;, &#x27;value&#x27;: &#x27;0&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;EngineSpeed&#x27;, &#x27;value&#x27;: &#x27;2500&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>get_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;EngineSpeed&#x27;, &#x27;value&#x27;: &#x27;2500&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;VehicleSpeed&#x27;, &#x27;value&#x27;: &#x27;50&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;VehicleSpeed&#x27;, &#x27;value&#x27;: &#x27;60&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>wait</td><td class='trace-details'>{&#x27;seconds&#x27;: &#x27;0.1&#x27;}</td></tr><tr><td class='trace-time'>0.100 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;VehicleSpeed&#x27;, &#x27;value&#x27;: &#x27;80&#x27;}</td></tr><tr><td class='trace-time'>0.100 s</td><td class='trace-op'>wait</td><td class='trace-details'>{&#x27;seconds&#x27;: &#x27;0.1&#x27;}</td></tr><tr><td class='trace-time'>0.200 s</td><td class='trace-op'>get_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;VehicleSpeed&#x27;, &#x27;value&#x27;: &#x27;80&#x27;}</td></tr><tr><td class='trace-time'>0.200 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;VehicleSpeed&#x27;, &#x27;value&#x27;: &#x27;0&#x27;}</td></tr><tr><td class='trace-time'>0.200 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;EngineSpeed&#x27;, &#x27;value&#x27;: &#x27;0&#x27;}</td></tr><tr><td class='trace-time'>0.200 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;Clamp15Status&#x27;, &#x27;value&#x27;: &#x27;0&#x27;}</td></tr><tr><td class='trace-time'>0.200 s</td><td class='trace-op'>set_ignition</td><td class='trace-details'>{&#x27;state&#x27;: &#x27;False&#x27;}</td></tr>
+          </tbody>
+        </table>
+        
+      </div>
+    </div>
+    
+    <div class="test-card" data-status="PASS" data-testid="TC_07_CONTROLDESK_HIL_SIMULATION">
+      <div class="test-header" onclick="toggleCard(this.parentElement)">
+        <div class="test-title-group">
+          <span class="badge badge-pass">PASS</span>
+          <span class="test-id">TC_07_CONTROLDESK_HIL_SIMULATION</span>
+        </div>
+        <div class="test-meta">
+          <span>16 Schritte</span>
+          <span>•</span>
+          <span>0.000 s</span>
+          <span class="chevron">▼</span>
+        </div>
+      </div>
+      <div class="test-body">
+        
+        
+        <div class="section-title">Original-Spezifikation (.txt)</div>
+        <pre class="spec-box">Original Test Specification:
+========================================================================
+Precondition
+10. Zündung an
+20. Versorgung auf 13.5 V setzen
+30. Parameter GAIN auf 0 schreiben
+40. CAN-Signal BatteryVoltageCAN auf 13.5 V setzen
+50. CAN-Signal DoorContactStatus auf 0 setzen
+
+Action
+60. Parameter GAIN auf 42 schreiben
+60. Parameter GAIN ist 42
+70. CAN-Signal DoorContactStatus auf 1 setzen
+70. Auf CAN-Signal DoorContactStatus == 1 warten, maximal 1 s, Prüfintervall 50 ms
+80. CAN-Signal BrakePedalPosition auf 75 % setzen
+80. CAN-Signal BrakePedalPosition ist 75 %
+90. Warte 200 ms
+
+Postcondition
+110. Parameter GAIN auf 0 schreiben
+120. CAN-Signal DoorContactStatus auf 0 setzen
+130. CAN-Signal BrakePedalPosition auf 0 % setzen
+140. Zündung aus
+========================================================================</pre>
+        
+        
+        <div class="section-title" style="margin-top: 14px;">Prüfstands-Ausführungs-Trace (16 Aktionen)</div>
+        <table class="trace-table">
+          <thead>
+            <tr><th>Sim-Zeit</th><th>Operation</th><th>Parameter / Werte</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_ignition</td><td class='trace-details'>{&#x27;state&#x27;: &#x27;True&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_supply</td><td class='trace-details'>{&#x27;value&#x27;: &#x27;13.5&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>write_parameter</td><td class='trace-details'>{&#x27;parameter&#x27;: &#x27;GAIN&#x27;, &#x27;value&#x27;: &#x27;0&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;BatteryVoltageCAN&#x27;, &#x27;value&#x27;: &#x27;13.5&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;DoorContactStatus&#x27;, &#x27;value&#x27;: &#x27;0&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>write_parameter</td><td class='trace-details'>{&#x27;parameter&#x27;: &#x27;GAIN&#x27;, &#x27;value&#x27;: &#x27;42&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>read_parameter</td><td class='trace-details'>{&#x27;parameter&#x27;: &#x27;GAIN&#x27;, &#x27;value&#x27;: &#x27;42&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;DoorContactStatus&#x27;, &#x27;value&#x27;: &#x27;1&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>get_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;DoorContactStatus&#x27;, &#x27;value&#x27;: &#x27;1&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;BrakePedalPosition&#x27;, &#x27;value&#x27;: &#x27;75&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>get_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;BrakePedalPosition&#x27;, &#x27;value&#x27;: &#x27;75&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>wait</td><td class='trace-details'>{&#x27;seconds&#x27;: &#x27;0.2&#x27;}</td></tr><tr><td class='trace-time'>0.200 s</td><td class='trace-op'>write_parameter</td><td class='trace-details'>{&#x27;parameter&#x27;: &#x27;GAIN&#x27;, &#x27;value&#x27;: &#x27;0&#x27;}</td></tr><tr><td class='trace-time'>0.200 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;DoorContactStatus&#x27;, &#x27;value&#x27;: &#x27;0&#x27;}</td></tr><tr><td class='trace-time'>0.200 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;BrakePedalPosition&#x27;, &#x27;value&#x27;: &#x27;0&#x27;}</td></tr><tr><td class='trace-time'>0.200 s</td><td class='trace-op'>set_ignition</td><td class='trace-details'>{&#x27;state&#x27;: &#x27;False&#x27;}</td></tr>
+          </tbody>
+        </table>
+        
+      </div>
+    </div>
+    
+    <div class="test-card" data-status="PASS" data-testid="TC_08_BMS_HV_PRECHARGE_SEQUENCE">
+      <div class="test-header" onclick="toggleCard(this.parentElement)">
+        <div class="test-title-group">
+          <span class="badge badge-pass">PASS</span>
+          <span class="test-id">TC_08_BMS_HV_PRECHARGE_SEQUENCE</span>
+        </div>
+        <div class="test-meta">
+          <span>31 Schritte</span>
+          <span>•</span>
+          <span>0.000 s</span>
+          <span class="chevron">▼</span>
+        </div>
+      </div>
+      <div class="test-body">
+        
+        
+        <div class="section-title">Original-Spezifikation (.txt)</div>
+        <pre class="spec-box">Original Test Specification:
+========================================================================
+Precondition
+10. Zündung an
+20. CAN-Signal Clamp15Status auf 1 setzen
+30. CAN-Signal InterlockStatus auf 1 setzen
+40. CAN-Signal PackVoltage auf 400 V setzen
+50. CAN-Signal BatteryVoltageCAN auf 0 V setzen
+60. CAN-Signal PrechargeContactState auf 0 setzen
+70. CAN-Signal HVMainPosContactState auf 0 setzen
+80. CAN-Signal HVMainNegContactState auf 0 setzen
+90. CAN-Signal BMSState auf 1 setzen
+100. Fehlerspeicher BMS löschen
+
+Action
+110. CAN-Signal PrechargeContactState auf 1 setzen
+120. CAN-Signal BMSState auf 2 setzen
+130. Warte 200 ms
+140. CAN-Signal BatteryVoltageCAN auf 380 V setzen
+140. CAN-Signal BatteryVoltageCAN ist 380 V
+150. CAN-Signal HVMainPosContactState auf 1 setzen
+150. CAN-Signal HVMainPosContactState ist 1
+160. CAN-Signal HVMainNegContactState auf 1 setzen
+160. CAN-Signal HVMainNegContactState ist 1
+170. CAN-Signal PrechargeContactState auf 0 setzen
+170. CAN-Signal PrechargeContactState ist 0
+180. CAN-Signal BMSState auf 3 setzen
+180. CAN-Signal BMSState ist 3
+190. Warte 50 ms
+
+Postcondition
+200. CAN-Signal PrechargeContactState auf 0 setzen
+210. CAN-Signal HVMainPosContactState auf 0 setzen
+220. CAN-Signal HVMainNegContactState auf 0 setzen
+230. CAN-Signal BatteryVoltageCAN auf 0 V setzen
+240. CAN-Signal BMSState auf 1 setzen
+250. CAN-Signal Clamp15Status auf 0 setzen
+260. Zündung aus
+========================================================================</pre>
+        
+        
+        <div class="section-title" style="margin-top: 14px;">Prüfstands-Ausführungs-Trace (31 Aktionen)</div>
+        <table class="trace-table">
+          <thead>
+            <tr><th>Sim-Zeit</th><th>Operation</th><th>Parameter / Werte</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_ignition</td><td class='trace-details'>{&#x27;state&#x27;: &#x27;True&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;Clamp15Status&#x27;, &#x27;value&#x27;: &#x27;1&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;InterlockStatus&#x27;, &#x27;value&#x27;: &#x27;1&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;PackVoltage&#x27;, &#x27;value&#x27;: &#x27;400&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;BatteryVoltageCAN&#x27;, &#x27;value&#x27;: &#x27;0&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;PrechargeContactState&#x27;, &#x27;value&#x27;: &#x27;0&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;HVMainPosContactState&#x27;, &#x27;value&#x27;: &#x27;0&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;HVMainNegContactState&#x27;, &#x27;value&#x27;: &#x27;0&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;BMSState&#x27;, &#x27;value&#x27;: &#x27;1&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>clear_fault_memory</td><td class='trace-details'>{&#x27;ecu&#x27;: &#x27;BMS&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;PrechargeContactState&#x27;, &#x27;value&#x27;: &#x27;1&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;BMSState&#x27;, &#x27;value&#x27;: &#x27;2&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>wait</td><td class='trace-details'>{&#x27;seconds&#x27;: &#x27;0.2&#x27;}</td></tr><tr><td class='trace-time'>0.200 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;BatteryVoltageCAN&#x27;, &#x27;value&#x27;: &#x27;380&#x27;}</td></tr><tr><td class='trace-time'>0.200 s</td><td class='trace-op'>get_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;BatteryVoltageCAN&#x27;, &#x27;value&#x27;: &#x27;380&#x27;}</td></tr><tr><td class='trace-time'>0.200 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;HVMainPosContactState&#x27;, &#x27;value&#x27;: &#x27;1&#x27;}</td></tr><tr><td class='trace-time'>0.200 s</td><td class='trace-op'>get_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;HVMainPosContactState&#x27;, &#x27;value&#x27;: &#x27;1&#x27;}</td></tr><tr><td class='trace-time'>0.200 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;HVMainNegContactState&#x27;, &#x27;value&#x27;: &#x27;1&#x27;}</td></tr><tr><td class='trace-time'>0.200 s</td><td class='trace-op'>get_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;HVMainNegContactState&#x27;, &#x27;value&#x27;: &#x27;1&#x27;}</td></tr><tr><td class='trace-time'>0.200 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;PrechargeContactState&#x27;, &#x27;value&#x27;: &#x27;0&#x27;}</td></tr><tr><td class='trace-time'>0.200 s</td><td class='trace-op'>get_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;PrechargeContactState&#x27;, &#x27;value&#x27;: &#x27;0&#x27;}</td></tr><tr><td class='trace-time'>0.200 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;BMSState&#x27;, &#x27;value&#x27;: &#x27;3&#x27;}</td></tr><tr><td class='trace-time'>0.200 s</td><td class='trace-op'>get_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;BMSState&#x27;, &#x27;value&#x27;: &#x27;3&#x27;}</td></tr><tr><td class='trace-time'>0.200 s</td><td class='trace-op'>wait</td><td class='trace-details'>{&#x27;seconds&#x27;: &#x27;0.05&#x27;}</td></tr><tr><td class='trace-time'>0.250 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;PrechargeContactState&#x27;, &#x27;value&#x27;: &#x27;0&#x27;}</td></tr><tr><td class='trace-time'>0.250 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;HVMainPosContactState&#x27;, &#x27;value&#x27;: &#x27;0&#x27;}</td></tr><tr><td class='trace-time'>0.250 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;HVMainNegContactState&#x27;, &#x27;value&#x27;: &#x27;0&#x27;}</td></tr><tr><td class='trace-time'>0.250 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;BatteryVoltageCAN&#x27;, &#x27;value&#x27;: &#x27;0&#x27;}</td></tr><tr><td class='trace-time'>0.250 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;BMSState&#x27;, &#x27;value&#x27;: &#x27;1&#x27;}</td></tr><tr><td class='trace-time'>0.250 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;Clamp15Status&#x27;, &#x27;value&#x27;: &#x27;0&#x27;}</td></tr><tr><td class='trace-time'>0.250 s</td><td class='trace-op'>set_ignition</td><td class='trace-details'>{&#x27;state&#x27;: &#x27;False&#x27;}</td></tr>
+          </tbody>
+        </table>
+        
+      </div>
+    </div>
+    
+    <div class="test-card" data-status="PASS" data-testid="TC_09_BMS_CELL_OVERVOLTAGE_DERATING">
+      <div class="test-header" onclick="toggleCard(this.parentElement)">
+        <div class="test-title-group">
+          <span class="badge badge-pass">PASS</span>
+          <span class="test-id">TC_09_BMS_CELL_OVERVOLTAGE_DERATING</span>
+        </div>
+        <div class="test-meta">
+          <span>28 Schritte</span>
+          <span>•</span>
+          <span>0.000 s</span>
+          <span class="chevron">▼</span>
+        </div>
+      </div>
+      <div class="test-body">
+        
+        
+        <div class="section-title">Original-Spezifikation (.txt)</div>
+        <pre class="spec-box">Original Test Specification:
+========================================================================
+Precondition
+10. Zündung an
+20. CAN-Signal Clamp15Status auf 1 setzen
+30. CAN-Signal BMSState auf 4 setzen
+40. CAN-Signal PackSOC auf 85 % setzen
+50. CAN-Signal MaxChargeCurrent auf 120 A setzen
+60. CAN-Signal CellVoltageMax auf 4.10 V setzen
+70. CAN-Signal HVMainPosContactState auf 1 setzen
+80. CAN-Signal HVMainNegContactState auf 1 setzen
+90. Fehlerspeicher BMS löschen
+
+Action
+100. CAN-Signal CellVoltageMax auf 4.20 V setzen
+110. CAN-Signal MaxChargeCurrent auf 40 A setzen
+110. CAN-Signal MaxChargeCurrent ist 40 A
+120. CAN-Signal CellVoltageMax auf 4.28 V setzen
+130. CAN-Signal MaxChargeCurrent auf 0 A setzen
+130. CAN-Signal MaxChargeCurrent ist 0 A
+140. CAN-Signal HVMainPosContactState auf 0 setzen
+140. CAN-Signal HVMainPosContactState ist 0
+150. CAN-Signal BMSState auf 5 setzen
+150. CAN-Signal BMSState ist 5
+160. Fehlerspeicher BMS lesen
+160. Fehlerspeichereintrag DTC_BMS_CELL_OVERVOLTAGE in BMS eingetragen
+
+Postcondition
+170. CAN-Signal CellVoltageMax auf 3.70 V setzen
+180. CAN-Signal MaxChargeCurrent auf 0 A setzen
+190. CAN-Signal HVMainPosContactState auf 0 setzen
+200. CAN-Signal BMSState auf 1 setzen
+210. Fehlerspeicher BMS löschen
+220. CAN-Signal Clamp15Status auf 0 setzen
+230. Zündung aus
+========================================================================</pre>
+        
+        
+        <div class="section-title" style="margin-top: 14px;">Prüfstands-Ausführungs-Trace (28 Aktionen)</div>
+        <table class="trace-table">
+          <thead>
+            <tr><th>Sim-Zeit</th><th>Operation</th><th>Parameter / Werte</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_ignition</td><td class='trace-details'>{&#x27;state&#x27;: &#x27;True&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;Clamp15Status&#x27;, &#x27;value&#x27;: &#x27;1&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;BMSState&#x27;, &#x27;value&#x27;: &#x27;4&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;PackSOC&#x27;, &#x27;value&#x27;: &#x27;85&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;MaxChargeCurrent&#x27;, &#x27;value&#x27;: &#x27;120&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;CellVoltageMax&#x27;, &#x27;value&#x27;: &#x27;4.1&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;HVMainPosContactState&#x27;, &#x27;value&#x27;: &#x27;1&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;HVMainNegContactState&#x27;, &#x27;value&#x27;: &#x27;1&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>clear_fault_memory</td><td class='trace-details'>{&#x27;ecu&#x27;: &#x27;BMS&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;CellVoltageMax&#x27;, &#x27;value&#x27;: &#x27;4.2&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;MaxChargeCurrent&#x27;, &#x27;value&#x27;: &#x27;40&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>get_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;MaxChargeCurrent&#x27;, &#x27;value&#x27;: &#x27;40&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;CellVoltageMax&#x27;, &#x27;value&#x27;: &#x27;4.28&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;MaxChargeCurrent&#x27;, &#x27;value&#x27;: &#x27;0&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>get_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;MaxChargeCurrent&#x27;, &#x27;value&#x27;: &#x27;0&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;HVMainPosContactState&#x27;, &#x27;value&#x27;: &#x27;0&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>get_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;HVMainPosContactState&#x27;, &#x27;value&#x27;: &#x27;0&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;BMSState&#x27;, &#x27;value&#x27;: &#x27;5&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>get_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;BMSState&#x27;, &#x27;value&#x27;: &#x27;5&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>read_fault_memory</td><td class='trace-details'>{&#x27;ecu&#x27;: &#x27;BMS&#x27;, &#x27;returned_entries&#x27;: &quot;[&#x27;DTC_BMS_CELL_OVERVOLTAGE&#x27;]&quot;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>read_fault_memory</td><td class='trace-details'>{&#x27;ecu&#x27;: &#x27;BMS&#x27;, &#x27;returned_entries&#x27;: &quot;[&#x27;DTC_BMS_CELL_OVERVOLTAGE&#x27;]&quot;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;CellVoltageMax&#x27;, &#x27;value&#x27;: &#x27;3.7&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;MaxChargeCurrent&#x27;, &#x27;value&#x27;: &#x27;0&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;HVMainPosContactState&#x27;, &#x27;value&#x27;: &#x27;0&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;BMSState&#x27;, &#x27;value&#x27;: &#x27;1&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>clear_fault_memory</td><td class='trace-details'>{&#x27;ecu&#x27;: &#x27;BMS&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;Clamp15Status&#x27;, &#x27;value&#x27;: &#x27;0&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_ignition</td><td class='trace-details'>{&#x27;state&#x27;: &#x27;False&#x27;}</td></tr>
+          </tbody>
+        </table>
+        
+      </div>
+    </div>
+    
+    <div class="test-card" data-status="PASS" data-testid="TC_10_BMS_THERMAL_DERATING_SWEEP">
+      <div class="test-header" onclick="toggleCard(this.parentElement)">
+        <div class="test-title-group">
+          <span class="badge badge-pass">PASS</span>
+          <span class="test-id">TC_10_BMS_THERMAL_DERATING_SWEEP</span>
+        </div>
+        <div class="test-meta">
+          <span>24 Schritte</span>
+          <span>•</span>
+          <span>0.000 s</span>
+          <span class="chevron">▼</span>
+        </div>
+      </div>
+      <div class="test-body">
+        
+        
+        <div class="section-title">Original-Spezifikation (.txt)</div>
+        <pre class="spec-box">Original Test Specification:
+========================================================================
+Precondition
+10. Zündung an
+20. CAN-Signal Clamp15Status auf 1 setzen
+30. CAN-Signal BMSState auf 3 setzen
+40. CAN-Signal CellTempMax auf 25 °C setzen
+50. CAN-Signal CoolingRequest auf 0 setzen
+60. CAN-Signal MaxDischargeCurrent auf 400 A setzen
+
+Action
+70: FOR (temp;[35, 45, 55, 65])
+80. CAN-Signal CoolingRequest auf 2 setzen
+80. CAN-Signal CoolingRequest ist 2
+90. CAN-Signal MaxDischargeCurrent auf 150 A setzen
+90. CAN-Signal MaxDischargeCurrent ist 150 A
+100. Warte 100 ms
+70. CAN-Signal CellTempMax ist 55 °C
+
+Postcondition
+110. CAN-Signal CellTempMax auf 25 °C setzen
+120. CAN-Signal CoolingRequest auf 0 setzen
+130. CAN-Signal MaxDischargeCurrent auf 300 A setzen
+140. CAN-Signal BMSState auf 1 setzen
+150. CAN-Signal Clamp15Status auf 0 setzen
+160. Zündung aus
+========================================================================</pre>
+        
+        
+        <div class="section-title" style="margin-top: 14px;">Prüfstands-Ausführungs-Trace (24 Aktionen)</div>
+        <table class="trace-table">
+          <thead>
+            <tr><th>Sim-Zeit</th><th>Operation</th><th>Parameter / Werte</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_ignition</td><td class='trace-details'>{&#x27;state&#x27;: &#x27;True&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;Clamp15Status&#x27;, &#x27;value&#x27;: &#x27;1&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;BMSState&#x27;, &#x27;value&#x27;: &#x27;3&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;CellTempMax&#x27;, &#x27;value&#x27;: &#x27;25&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;CoolingRequest&#x27;, &#x27;value&#x27;: &#x27;0&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;MaxDischargeCurrent&#x27;, &#x27;value&#x27;: &#x27;400&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;CellTempMax&#x27;, &#x27;value&#x27;: &#x27;35&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>wait</td><td class='trace-details'>{&#x27;seconds&#x27;: &#x27;0.05&#x27;}</td></tr><tr><td class='trace-time'>0.050 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;CellTempMax&#x27;, &#x27;value&#x27;: &#x27;45&#x27;}</td></tr><tr><td class='trace-time'>0.050 s</td><td class='trace-op'>wait</td><td class='trace-details'>{&#x27;seconds&#x27;: &#x27;0.05&#x27;}</td></tr><tr><td class='trace-time'>0.100 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;CellTempMax&#x27;, &#x27;value&#x27;: &#x27;55&#x27;}</td></tr><tr><td class='trace-time'>0.100 s</td><td class='trace-op'>wait</td><td class='trace-details'>{&#x27;seconds&#x27;: &#x27;0.05&#x27;}</td></tr><tr><td class='trace-time'>0.150 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;CoolingRequest&#x27;, &#x27;value&#x27;: &#x27;2&#x27;}</td></tr><tr><td class='trace-time'>0.150 s</td><td class='trace-op'>get_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;CoolingRequest&#x27;, &#x27;value&#x27;: &#x27;2&#x27;}</td></tr><tr><td class='trace-time'>0.150 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;MaxDischargeCurrent&#x27;, &#x27;value&#x27;: &#x27;150&#x27;}</td></tr><tr><td class='trace-time'>0.150 s</td><td class='trace-op'>get_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;MaxDischargeCurrent&#x27;, &#x27;value&#x27;: &#x27;150&#x27;}</td></tr><tr><td class='trace-time'>0.150 s</td><td class='trace-op'>wait</td><td class='trace-details'>{&#x27;seconds&#x27;: &#x27;0.1&#x27;}</td></tr><tr><td class='trace-time'>0.250 s</td><td class='trace-op'>get_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;CellTempMax&#x27;, &#x27;value&#x27;: &#x27;55&#x27;}</td></tr><tr><td class='trace-time'>0.250 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;CellTempMax&#x27;, &#x27;value&#x27;: &#x27;25&#x27;}</td></tr><tr><td class='trace-time'>0.250 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;CoolingRequest&#x27;, &#x27;value&#x27;: &#x27;0&#x27;}</td></tr><tr><td class='trace-time'>0.250 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;MaxDischargeCurrent&#x27;, &#x27;value&#x27;: &#x27;300&#x27;}</td></tr><tr><td class='trace-time'>0.250 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;BMSState&#x27;, &#x27;value&#x27;: &#x27;1&#x27;}</td></tr><tr><td class='trace-time'>0.250 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;Clamp15Status&#x27;, &#x27;value&#x27;: &#x27;0&#x27;}</td></tr><tr><td class='trace-time'>0.250 s</td><td class='trace-op'>set_ignition</td><td class='trace-details'>{&#x27;state&#x27;: &#x27;False&#x27;}</td></tr>
+          </tbody>
+        </table>
+        
+      </div>
+    </div>
+    
+    <div class="test-card" data-status="PASS" data-testid="TC_11_BMS_ISOLATION_MONITORING">
+      <div class="test-header" onclick="toggleCard(this.parentElement)">
+        <div class="test-title-group">
+          <span class="badge badge-pass">PASS</span>
+          <span class="test-id">TC_11_BMS_ISOLATION_MONITORING</span>
+        </div>
+        <div class="test-meta">
+          <span>18 Schritte</span>
+          <span>•</span>
+          <span>0.000 s</span>
+          <span class="chevron">▼</span>
+        </div>
+      </div>
+      <div class="test-body">
+        
+        
+        <div class="section-title">Original-Spezifikation (.txt)</div>
+        <pre class="spec-box">Original Test Specification:
+========================================================================
+Precondition
+10. Zündung an
+20. CAN-Signal Clamp15Status auf 1 setzen
+30. CAN-Signal BMSState auf 3 setzen
+40. CAN-Signal IsolationResistance auf 1500 kOhm setzen
+50. CAN-Signal IsolationStatus auf 0 setzen
+60. Fehlerspeicher BMS löschen
+
+Action
+70. CAN-Signal IsolationResistance auf 60 kOhm setzen
+70. CAN-Signal IsolationResistance ist 60 kOhm
+80. CAN-Signal IsolationStatus auf 2 setzen
+80. Auf CAN-Signal IsolationStatus == 2 warten, maximal 1 s, Prüfintervall 50 ms
+90. Fehlerspeicher BMS lesen
+90. Fehlerspeichereintrag DTC_BMS_ISOLATION_FAULT in BMS eingetragen
+
+Postcondition
+100. CAN-Signal IsolationResistance auf 1500 kOhm setzen
+110. CAN-Signal IsolationStatus auf 0 setzen
+120. CAN-Signal BMSState auf 1 setzen
+130. Fehlerspeicher BMS löschen
+140. CAN-Signal Clamp15Status auf 0 setzen
+150. Zündung aus
+========================================================================</pre>
+        
+        
+        <div class="section-title" style="margin-top: 14px;">Prüfstands-Ausführungs-Trace (18 Aktionen)</div>
+        <table class="trace-table">
+          <thead>
+            <tr><th>Sim-Zeit</th><th>Operation</th><th>Parameter / Werte</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_ignition</td><td class='trace-details'>{&#x27;state&#x27;: &#x27;True&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;Clamp15Status&#x27;, &#x27;value&#x27;: &#x27;1&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;BMSState&#x27;, &#x27;value&#x27;: &#x27;3&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;IsolationResistance&#x27;, &#x27;value&#x27;: &#x27;1500&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;IsolationStatus&#x27;, &#x27;value&#x27;: &#x27;0&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>clear_fault_memory</td><td class='trace-details'>{&#x27;ecu&#x27;: &#x27;BMS&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;IsolationResistance&#x27;, &#x27;value&#x27;: &#x27;60&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>get_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;IsolationResistance&#x27;, &#x27;value&#x27;: &#x27;60&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;IsolationStatus&#x27;, &#x27;value&#x27;: &#x27;2&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>get_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;IsolationStatus&#x27;, &#x27;value&#x27;: &#x27;2&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>read_fault_memory</td><td class='trace-details'>{&#x27;ecu&#x27;: &#x27;BMS&#x27;, &#x27;returned_entries&#x27;: &quot;[&#x27;DTC_BMS_ISOLATION_FAULT&#x27;]&quot;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>read_fault_memory</td><td class='trace-details'>{&#x27;ecu&#x27;: &#x27;BMS&#x27;, &#x27;returned_entries&#x27;: &quot;[&#x27;DTC_BMS_ISOLATION_FAULT&#x27;]&quot;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;IsolationResistance&#x27;, &#x27;value&#x27;: &#x27;1500&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;IsolationStatus&#x27;, &#x27;value&#x27;: &#x27;0&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;BMSState&#x27;, &#x27;value&#x27;: &#x27;1&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>clear_fault_memory</td><td class='trace-details'>{&#x27;ecu&#x27;: &#x27;BMS&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;Clamp15Status&#x27;, &#x27;value&#x27;: &#x27;0&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_ignition</td><td class='trace-details'>{&#x27;state&#x27;: &#x27;False&#x27;}</td></tr>
+          </tbody>
+        </table>
+        
+      </div>
+    </div>
+    
+    <div class="test-card" data-status="PASS" data-testid="TC_12_BMS_SIGNAL_TOLERANCES_AND_RANGES">
+      <div class="test-header" onclick="toggleCard(this.parentElement)">
+        <div class="test-title-group">
+          <span class="badge badge-pass">PASS</span>
+          <span class="test-id">TC_12_BMS_SIGNAL_TOLERANCES_AND_RANGES</span>
+        </div>
+        <div class="test-meta">
+          <span>20 Schritte</span>
+          <span>•</span>
+          <span>0.000 s</span>
+          <span class="chevron">▼</span>
+        </div>
+      </div>
+      <div class="test-body">
+        
+        
+        <div class="section-title">Original-Spezifikation (.txt)</div>
+        <pre class="spec-box">Original Test Specification:
+========================================================================
+Precondition
+10. Zündung an
+20. CAN-Signal Clamp15Status auf 1 setzen
+30. CAN-Signal CellVoltageMax auf 4.20 V setzen
+40. CAN-Signal CellTempMax auf 45 °C setzen
+50. CAN-Signal PackCurrent auf -80 A setzen
+60. CAN-Signal IsolationResistance auf 1200 kOhm setzen
+
+Action
+70. CAN-Signal CellVoltageMax auf 4.22 V setzen
+70. CAN-Signal CellVoltageMax ist 4.20 V ± 50 mV
+80. CAN-Signal CellTempMax auf 55 °C setzen
+80. CAN-Signal CellTempMax liegt im Bereich [50 °C, 60 °C]
+80. CAN-Signal CellTempMax &gt;= 55 °C
+90. CAN-Signal PackCurrent auf -120 A setzen
+90. CAN-Signal PackCurrent &lt; -100 A
+100. CAN-Signal IsolationResistance auf 950 kOhm setzen
+100. CAN-Signal IsolationResistance &lt;= 1000 kOhm
+100. CAN-Signal IsolationResistance &gt; 900 kOhm
+
+Postcondition
+110. CAN-Signal CellVoltageMax auf 3.70 V setzen
+120. CAN-Signal PackCurrent auf 0 A setzen
+130. CAN-Signal Clamp15Status auf 0 setzen
+140. Zündung aus
+========================================================================</pre>
+        
+        
+        <div class="section-title" style="margin-top: 14px;">Prüfstands-Ausführungs-Trace (20 Aktionen)</div>
+        <table class="trace-table">
+          <thead>
+            <tr><th>Sim-Zeit</th><th>Operation</th><th>Parameter / Werte</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_ignition</td><td class='trace-details'>{&#x27;state&#x27;: &#x27;True&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;Clamp15Status&#x27;, &#x27;value&#x27;: &#x27;1&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;CellVoltageMax&#x27;, &#x27;value&#x27;: &#x27;4.2&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;CellTempMax&#x27;, &#x27;value&#x27;: &#x27;45&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;PackCurrent&#x27;, &#x27;value&#x27;: &#x27;-80&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;IsolationResistance&#x27;, &#x27;value&#x27;: &#x27;1200&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;CellVoltageMax&#x27;, &#x27;value&#x27;: &#x27;4.22&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>get_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;CellVoltageMax&#x27;, &#x27;value&#x27;: &#x27;4.22&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;CellTempMax&#x27;, &#x27;value&#x27;: &#x27;55&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>get_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;CellTempMax&#x27;, &#x27;value&#x27;: &#x27;55&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>get_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;CellTempMax&#x27;, &#x27;value&#x27;: &#x27;55&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;PackCurrent&#x27;, &#x27;value&#x27;: &#x27;-120&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>get_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;PackCurrent&#x27;, &#x27;value&#x27;: &#x27;-120&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;IsolationResistance&#x27;, &#x27;value&#x27;: &#x27;950&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>get_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;IsolationResistance&#x27;, &#x27;value&#x27;: &#x27;950&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>get_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;IsolationResistance&#x27;, &#x27;value&#x27;: &#x27;950&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;CellVoltageMax&#x27;, &#x27;value&#x27;: &#x27;3.7&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;PackCurrent&#x27;, &#x27;value&#x27;: &#x27;0&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_can_signal</td><td class='trace-details'>{&#x27;signal&#x27;: &#x27;Clamp15Status&#x27;, &#x27;value&#x27;: &#x27;0&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>set_ignition</td><td class='trace-details'>{&#x27;state&#x27;: &#x27;False&#x27;}</td></tr>
+          </tbody>
+        </table>
+        
+      </div>
+    </div>
+    
+    </div>
+
+    <footer>
+      SpecToTest v0.3.0 • Hexagonal Test Case Generator & HiL Testbench Report
+    </footer>
+  </div>
+
+  <script>
+    function toggleCard(card) {
+      card.classList.toggle('open');
+    }
+
+    function filterTests(status, btn) {
+      document.querySelectorAll('.filter-buttons .btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const cards = document.querySelectorAll('.test-card');
+      cards.forEach(card => {
+        if (status === 'all' || card.dataset.status === status) {
+          card.style.display = 'block';
+        } else {
+          card.style.display = 'none';
+        }
+      });
+    }
+
+    function searchTests() {
+      const query = document.getElementById('searchInput').value.toLowerCase();
+      const cards = document.querySelectorAll('.test-card');
+      cards.forEach(card => {
+        const text = card.dataset.testid.toLowerCase();
+        if (text.includes(query)) {
+          card.style.display = 'block';
+        } else {
+          card.style.display = 'none';
+        }
+      });
+    }
+  </script>
+</body>
+</html>

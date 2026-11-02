@@ -1,0 +1,11 @@
+[[mapping]]
+id = "MAP_SUPPLY"
+template = "Versorgung auf {spannung} setzen"
+operation = "set_supply"
+parameters = { spannung = "value" }
+
+[[mapping]]
+id = "MAP_EXPECT_SUPPLY_MINIMUM"
+template = "Versorgung beträgt mindestens {spannung}"
+operation = "expect_supply_at_least"
+parameters = { spannung = "minimum" }

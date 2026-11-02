@@ -1,0 +1,7 @@
+TESTFALL: TC_EXTERNAL_OPERATION_001
+NAME: External Operation Test
+VORBEDINGUNGEN:
+ABLAUF:
+  10. Versorgung auf 13.5 V setzen
+  20. Versorgung beträgt mindestens 12 V
+NACHBEDINGUNGEN:
