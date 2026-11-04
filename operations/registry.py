@@ -3,13 +3,16 @@
 Hier werden die in den einzelnen Modulen (ignition.py, diagnostic.py, supply.py, ...)
 implementierten Python-Funktionen mit ihren Verträgen registriert.
 """
+from contextvars import ContextVar
 from dataclasses import dataclass
 from decimal import Decimal
 import json
 from pathlib import Path
 import re
+from typing import Any
 
 from tcg.core.contracts import OperationContract, ParameterSpec, build_registry
+from tcg.core.model import SpecError
 from tcg.core.parameters import Boolean, Decimal as DecimalType, Quantity, Resource, String
 
 from . import can, diagnostic, hmi, ignition, supply, timing
@@ -46,7 +49,29 @@ DTC = Resource('diagnostic_code')
 SCREEN = Resource('screen')
 PARAMETER = Resource('parameter')
 PARAMETER_VALUE = DecimalType(Decimal('0'), Decimal('100'))
-CAN_SIGNAL = Resource('can_signal')
+_current_can_signal: ContextVar[str | None] = ContextVar('_current_can_signal', default=None)
+
+
+@dataclass(frozen=True)
+class CanSignalResource:
+    """Wrapper um Resource('can_signal'), der das aktuelle Signal im Thread-/Task-Kontext speichert."""
+    resource: Resource
+
+    @property
+    def kind(self) -> str:
+        return self.resource.kind
+
+    @property
+    def lexical(self) -> re.Pattern:
+        return self.resource.lexical
+
+    def convert(self, text: str, profile: Any) -> str:
+        res = self.resource.convert(text, profile)
+        _current_can_signal.set(res)
+        return res
+
+
+CAN_SIGNAL = CanSignalResource(Resource('can_signal'))
 
 BASE_CAN_SIGNAL_VALUE = Quantity(
     dimension='can_signal_value',
@@ -76,49 +101,62 @@ BASE_CAN_SIGNAL_VALUE = Quantity(
 )
 
 
-def _load_can_symbolic_enums() -> dict[str, Decimal]:
-    """Lädt symbolische Enum-Zustände aus der CAN-Signaldatenbank (DBC VAL_ Tabellen)."""
-    enums: dict[str, Decimal] = {
-        'Init': Decimal('0'),
-        'Standby': Decimal('1'),
-        'Precharge': Decimal('2'),
-        'DriveReady': Decimal('3'),
-        'Charge': Decimal('4'),
-        'Fault': Decimal('5'),
-        'Offen': Decimal('0'),
-        'Geschlossen': Decimal('1'),
-        'Aus': Decimal('0'),
-        'An': Decimal('1'),
-        'Inaktiv': Decimal('0'),
-        'Aktiv': Decimal('1'),
-        'Normal': Decimal('0'),
-        'Warnung': Decimal('1'),
-        'Fehler': Decimal('2'),
-        'Stufe 1': Decimal('1'),
-        'Stufe_1': Decimal('1'),
-        'Stufe 2': Decimal('2'),
-        'Stufe_2': Decimal('2'),
+def _load_can_signal_enums() -> tuple[dict[str, dict[str, Decimal]], set[str]]:
+    """Lädt signalabhängige Enum-Zustände aus der CAN-Signaldatenbank (inputs/can_signals.json)."""
+    signal_enums: dict[str, dict[str, Decimal]] = {}
+    all_known_states: set[str] = set()
+
+    default_signals = {
+        'DoorContactStatus': {'Geschlossen': Decimal('0'), 'Offen': Decimal('1')},
+        'InterlockStatus': {'Offen': Decimal('0'), 'Geschlossen': Decimal('1')},
+        'Clamp15Status': {'Aus': Decimal('0'), 'An': Decimal('1')},
+        'BMSState': {
+            'Init': Decimal('0'), 'Standby': Decimal('1'), 'Precharge': Decimal('2'),
+            'DriveReady': Decimal('3'), 'Charge': Decimal('4'), 'Fault': Decimal('5'),
+        },
+        'HVMainPosContactState': {'Offen': Decimal('0'), 'Geschlossen': Decimal('1'), 'Fehler': Decimal('2')},
+        'HVMainNegContactState': {'Offen': Decimal('0'), 'Geschlossen': Decimal('1'), 'Fehler': Decimal('2')},
+        'PrechargeContactState': {'Offen': Decimal('0'), 'Geschlossen': Decimal('1'), 'Fehler': Decimal('2')},
+        'CrashSignal': {'Kein Crash': Decimal('0'), 'Crash erkannt': Decimal('1')},
+        'BalancingActive': {'Inaktiv': Decimal('0'), 'Aktiv': Decimal('1')},
+        'CoolingRequest': {'Aus': Decimal('0'), 'Stufe 1': Decimal('1'), 'Stufe 2': Decimal('2')},
+        'IsolationStatus': {'Normal': Decimal('0'), 'Warnung': Decimal('1'), 'Fehler': Decimal('2')},
     }
+    for sname, states in default_signals.items():
+        signal_enums[sname] = {}
+        for desc, val in states.items():
+            signal_enums[sname][desc] = val
+            signal_enums[sname][desc.replace(' ', '_')] = val
+            all_known_states.add(desc)
+            all_known_states.add(desc.replace(' ', '_'))
+
     can_json = Path(__file__).resolve().parent.parent / 'inputs' / 'can_signals.json'
     if can_json.exists():
         try:
             with open(can_json, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-            for sdata in data.get('signals', {}).values():
-                for raw_val, desc in sdata.get('values', {}).items():
-                    val = Decimal(str(raw_val))
-                    enums[desc] = val
-                    enums[desc.replace(' ', '_')] = val
+            for sname, sdata in data.get('signals', {}).items():
+                if 'values' in sdata:
+                    if sname not in signal_enums:
+                        signal_enums[sname] = {}
+                    for raw_val, desc in sdata['values'].items():
+                        val = Decimal(str(raw_val))
+                        signal_enums[sname][desc] = val
+                        signal_enums[sname][desc.replace(' ', '_')] = val
+                        all_known_states.add(desc)
+                        all_known_states.add(desc.replace(' ', '_'))
         except Exception:
             pass
-    return enums
+
+    return signal_enums, all_known_states
 
 
 @dataclass(frozen=True)
 class SymbolicCanSignalValue:
-    """Quantity-Erweiterung für CAN-Signale: akzeptiert sowohl Zahlen/Einheiten als auch DBC-Enums."""
+    """Signalabhängige Quantity-Erweiterung für CAN-Signale: akzeptiert Zahlen/Einheiten und DBC-Enums."""
     quantity: Quantity
-    symbolic_enums: dict[str, Decimal]
+    signal_enums: dict[str, dict[str, Decimal]]
+    all_known_states: set[str]
 
     @property
     def unit(self):
@@ -148,16 +186,34 @@ class SymbolicCanSignalValue:
 
     def convert(self, text, profile):
         clean = text.strip('"\'')
-        if clean in self.symbolic_enums:
-            return self.symbolic_enums[clean]
-        clean_lower = clean.lower()
-        for k, v in self.symbolic_enums.items():
-            if k.lower() == clean_lower:
-                return v
+        sig = _current_can_signal.get()
+
+        if sig is not None:
+            sig_enums = self.signal_enums.get(sig, {})
+            # 1. Exakter Match für dieses konkrete Signal
+            if clean in sig_enums:
+                return sig_enums[clean]
+            clean_norm = clean.replace(' ', '_').lower()
+            for k, v in sig_enums.items():
+                if k.lower() == clean.lower() or k.replace(' ', '_').lower() == clean_norm:
+                    return v
+
+            # 2. Wenn der Bezeichner ein bekannter DBC-Zustand ist, aber nicht zu DIESEM Signal gehört -> Fehler!
+            if clean in self.all_known_states or clean.replace('_', ' ') in self.all_known_states:
+                allowed = sorted(set(sig_enums.keys()))
+                allowed_str = f"gültige Zustände: {', '.join(allowed)}" if allowed else "keine (kontinuierliches Signal)"
+                raise SpecError(
+                    f"Zustand {clean!r} ist für CAN-Signal {sig!r} nicht gültig; {allowed_str}"
+                )
+        elif clean in self.all_known_states or clean.replace('_', ' ') in self.all_known_states:
+            raise SpecError(f"Symbolischer Zustand {clean!r} erfordert Signal-Kontext")
+
+        # 3. Standard-Zahlenkonvertierung oder Schleifenvariable
         return self.quantity.convert(text, profile)
 
 
-CAN_SIGNAL_VALUE = SymbolicCanSignalValue(BASE_CAN_SIGNAL_VALUE, _load_can_symbolic_enums())
+_SIGNAL_ENUMS, _ALL_KNOWN_STATES = _load_can_signal_enums()
+CAN_SIGNAL_VALUE = SymbolicCanSignalValue(BASE_CAN_SIGNAL_VALUE, _SIGNAL_ENUMS, _ALL_KNOWN_STATES)
 
 VEHICLE_SPEED_VALUE = Quantity(
     dimension='vehicle_speed',

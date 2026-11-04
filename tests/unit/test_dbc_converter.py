@@ -19,6 +19,7 @@ from tcg.adapters.outbound.dummy_bench import VectorDummyBench, load_config
 from tcg.adapters.outbound.python_emitter import render_python
 from tcg.core.compiler import compile_cases
 from tcg.core.mapping import load_mappings, parse_mapping_document
+from tcg.core.model import SpecError
 from tcg.core.profile import load_profile
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -205,6 +206,96 @@ NAME: Symbolic CAN State Enum Test
         result = runner(bench)
         self.assertEqual(result.result, "PASS")
         self.assertEqual(bench.can_signals["BMSState"], 1)  # Cleanup left it in Standby (1)
+
+    def test_signal_dependent_enum_resolution_opposite_mappings(self):
+        """Verify that identical state names resolve to their respective signal's value in DBC.
+        
+        DoorContactStatus: Geschlossen -> 0, Offen -> 1
+        InterlockStatus:   Geschlossen -> 1, Offen -> 0
+        """
+        mapping_entries = parse_mapping_document((ROOT / "inputs/operation_mapping.toml").read_text(encoding="utf-8"))
+        mappings = load_mappings(mapping_entries, REGISTRY)
+        profile = load_profile(ROOT / "inputs/resources.json")
+
+        spec_text = """# TESTFALL: TC_OPPOSITE_ENUMS
+NAME: Opposite Enums Test
+## Action
+10. CAN-Signal DoorContactStatus auf Geschlossen setzen
+20. CAN-Signal InterlockStatus auf Geschlossen setzen
+30. CAN-Signal DoorContactStatus auf Offen setzen
+40. CAN-Signal InterlockStatus auf Offen setzen
+## Expected Result
+10. CAN-Signal DoorContactStatus ist Geschlossen
+20. CAN-Signal InterlockStatus ist Geschlossen
+30. CAN-Signal DoorContactStatus ist Offen
+40. CAN-Signal InterlockStatus ist Offen
+"""
+        sections = parse_text_spec(spec_text)
+        cases = compile_cases(sections, mappings, profile, "test_opposite.md")
+        source = render_python(cases, REGISTRY, "VectorDummyBench")
+
+        # Step 10: DoorContactStatus Geschlossen -> must be Decimal('0')
+        self.assertIn("_op_can.set_can_signal(bench, signal='DoorContactStatus', value=Decimal('0'))", source)
+        self.assertIn("_op_can.expect_can_signal(bench, signal='DoorContactStatus', value=Decimal('0'))", source)
+
+        # Step 20: InterlockStatus Geschlossen -> must be Decimal('1')
+        self.assertIn("_op_can.set_can_signal(bench, signal='InterlockStatus', value=Decimal('1'))", source)
+        self.assertIn("_op_can.expect_can_signal(bench, signal='InterlockStatus', value=Decimal('1'))", source)
+
+        # Step 30: DoorContactStatus Offen -> must be Decimal('1')
+        self.assertIn("_op_can.set_can_signal(bench, signal='DoorContactStatus', value=Decimal('1'))", source)
+        self.assertIn("_op_can.expect_can_signal(bench, signal='DoorContactStatus', value=Decimal('1'))", source)
+
+        # Step 40: InterlockStatus Offen -> must be Decimal('0')
+        self.assertIn("_op_can.set_can_signal(bench, signal='InterlockStatus', value=Decimal('0'))", source)
+        self.assertIn("_op_can.expect_can_signal(bench, signal='InterlockStatus', value=Decimal('0'))", source)
+
+        # Execution check
+        bench = VectorDummyBench(load_config(ROOT / "inputs/demo_bench.json", profile))
+        ns = {}
+        exec(compile(source, "generated_opposite_test.py", "exec"), ns)
+        runner = ns["RUNNERS"]["TC_OPPOSITE_ENUMS"]
+        result = runner(bench)
+        self.assertEqual(result.result, "PASS")
+
+    def test_signal_dependent_enum_rejects_incompatible_states(self):
+        """Verify that states belonging to one signal cannot be used on unrelated signals."""
+        mapping_entries = parse_mapping_document((ROOT / "inputs/operation_mapping.toml").read_text(encoding="utf-8"))
+        mappings = load_mappings(mapping_entries, REGISTRY)
+        profile = load_profile(ROOT / "inputs/resources.json")
+
+        # 1. Continuous signal (VehicleSpeed) rejects discrete state (DriveReady)
+        spec_continuous = """# TESTFALL: TC_ERR_1
+NAME: Speed Error Test
+## Action
+10. CAN-Signal VehicleSpeed auf DriveReady setzen
+"""
+        with self.assertRaises(SpecError) as ctx:
+            compile_cases(parse_text_spec(spec_continuous), mappings, profile, "test_err1.md")
+        self.assertIn("Zustand 'DriveReady' ist für CAN-Signal 'VehicleSpeed' nicht gültig", str(ctx.exception))
+
+        # 2. Discrete signal (DoorContactStatus) rejects state from BMSState (DriveReady)
+        spec_wrong_discrete = """# TESTFALL: TC_ERR_2
+NAME: Door Wrong State Test
+## Action
+10. CAN-Signal DoorContactStatus auf DriveReady setzen
+"""
+        with self.assertRaises(SpecError) as ctx:
+            compile_cases(parse_text_spec(spec_wrong_discrete), mappings, profile, "test_err2.md")
+        self.assertIn("Zustand 'DriveReady' ist für CAN-Signal 'DoorContactStatus' nicht gültig", str(ctx.exception))
+        self.assertIn("Geschlossen", str(ctx.exception))
+        self.assertIn("Offen", str(ctx.exception))
+
+        # 3. BMSState rejects DoorContactStatus state (Geschlossen)
+        spec_bms_wrong = """# TESTFALL: TC_ERR_3
+NAME: BMS Wrong State Test
+## Action
+10. CAN-Signal BMSState auf Geschlossen setzen
+"""
+        with self.assertRaises(SpecError) as ctx:
+            compile_cases(parse_text_spec(spec_bms_wrong), mappings, profile, "test_err3.md")
+        self.assertIn("Zustand 'Geschlossen' ist für CAN-Signal 'BMSState' nicht gültig", str(ctx.exception))
+
 
 
 if __name__ == "__main__":
