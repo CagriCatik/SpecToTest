@@ -1,6 +1,6 @@
 # TESTFALL: TC_14_CONTROL_FLOW_BRANCHING
 **NAME:** Tc 14 Bms Control Flow Branching
-**TESTZIEL:** Validierung von Verzweigungen (IF/ELSE IF/ELSE) und Mehrfachauswahl (SWITCH/CASE/DEFAULT) innerhalb von Testabläufen
+**TESTZIEL:** Validierung der dynamischen Leistungs- und Kühlanpassung des BMS mittels bedingter Verzweigungen (IF/ELSE IF/ELSE) und Zustandsauswahl (SWITCH/CASE/DEFAULT)
 
 ## Precondition
 10. Zündung an
@@ -8,36 +8,55 @@
 30. CAN-Signal BMSState auf 3 setzen
 40. CAN-Signal CellTempMax auf 25 °C setzen
 50. CAN-Signal CoolingRequest auf 0 setzen
+60. CAN-Signal MaxDischargeCurrent auf 400 A setzen
+70. Fehlerspeicher BMS löschen
 
 ## Action
-60: FOR (mode;[1, 2, 3])
-61:   SWITCH (mode)
-62:     CASE (1)
-63.       CAN-Signal CellTempMax auf 30 °C setzen
-64.       CAN-Signal CoolingRequest auf 0 setzen
-65:     CASE (2)
-66.       CAN-Signal CellTempMax auf 45 °C setzen
-67.       CAN-Signal CoolingRequest auf 1 setzen
-68:     DEFAULT
-69.       CAN-Signal CellTempMax auf 60 °C setzen
-70.       CAN-Signal CoolingRequest auf 2 setzen
-71:   END SWITCH
-72:   IF (mode == 2)
-73.     Warte 50 ms
-74:   ELSE IF (mode == 3)
-75.     Warte 100 ms
-76:   ELSE
-77.     Warte 10 ms
-78:   END IF
-79: END FOR
+80. CAN-Signal PackVoltage auf 400 V setzen
+90: FOR (mode;[1, 2, 3])
+100:  SWITCH (mode)
+110:    CASE (1)
+120.      CAN-Signal CellTempMax auf 30 °C setzen
+130.      CAN-Signal CoolingRequest auf 0 setzen
+140:    CASE (2)
+150.      CAN-Signal CellTempMax auf 45 °C setzen
+160.      CAN-Signal CoolingRequest auf 1 setzen
+170:    DEFAULT
+180.      CAN-Signal CellTempMax auf 60 °C setzen
+190.      CAN-Signal CoolingRequest auf 2 setzen
+200:  END SWITCH
+210:  IF (mode == 1)
+220.    CAN-Signal MaxDischargeCurrent auf 400 A setzen
+230:  ELSE IF (mode == 2)
+240.    CAN-Signal MaxDischargeCurrent auf 250 A setzen
+250:  ELSE
+260.    CAN-Signal MaxDischargeCurrent auf 100 A setzen
+270:  END IF
+280.  Warte 50 ms
+290: END FOR
+300. Fehlerspeicher BMS lesen
 
 ## Expected Result
-60. CAN-Signal CellTempMax ist 60 °C
-60. CAN-Signal CoolingRequest ist 2
+80. CAN-Signal PackVoltage ist 400 V
+120. CAN-Signal CellTempMax ist 30 °C
+130. CAN-Signal CoolingRequest ist 0
+150. CAN-Signal CellTempMax ist 45 °C
+160. CAN-Signal CoolingRequest ist 1
+180. CAN-Signal CellTempMax ist 60 °C
+190. CAN-Signal CoolingRequest ist 2
+220. CAN-Signal MaxDischargeCurrent ist 400 A
+240. CAN-Signal MaxDischargeCurrent ist 250 A
+260. CAN-Signal MaxDischargeCurrent ist 100 A
+90. CAN-Signal CellTempMax ist 60 °C
+90. CAN-Signal CoolingRequest ist 2
+90. CAN-Signal MaxDischargeCurrent ist 100 A
+300. Fehlerspeichereintrag DTC_BMS_OVERTEMPERATURE in BMS eingetragen
 
 ## Postcondition
-80. CAN-Signal CellTempMax auf 25 °C setzen
-90. CAN-Signal CoolingRequest auf 0 setzen
-100. CAN-Signal BMSState auf 1 setzen
-110. CAN-Signal Clamp15Status auf 0 setzen
-120. Zündung aus
+310. CAN-Signal CellTempMax auf 25 °C setzen
+320. CAN-Signal CoolingRequest auf 0 setzen
+330. CAN-Signal MaxDischargeCurrent auf 300 A setzen
+340. CAN-Signal BMSState auf 1 setzen
+350. Fehlerspeicher BMS löschen
+360. CAN-Signal Clamp15Status auf 0 setzen
+370. Zündung aus
