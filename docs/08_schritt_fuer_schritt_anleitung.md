@@ -91,19 +91,27 @@ Möchtest du eine völlig neue Prüfstandsaktion einführen, gehe wie folgt vor:
 ### A. Python-Funktion schreiben (`operations/bms.py`)
 ```python
 from decimal import Decimal
+from tcg.runtime.test_log import CheckFailed
 
-def emergency_disconnect(bench, reason: str) -> None:
+def emergency_disconnect(bench, *, reason: str) -> None:
     """Öffnet im Notfall unverzüglich alle Hochvolt-Schütze."""
     bench.write_can_signal('HVMainPosContactState', 0)
     bench.write_can_signal('HVMainNegContactState', 0)
     bench.log(f"Notabschaltung ausgelöst: {reason}")
+
+def expect_emergency_disconnect(bench, *, expected_status: str = 'Abgeschaltet') -> None:
+    """Prüft, ob die Notabschaltung aktiv ist."""
+    pos = bench.read_can_signal('HVMainPosContactState')
+    neg = bench.read_can_signal('HVMainNegContactState')
+    if pos != 0 or neg != 0:
+        raise CheckFailed(f"Schütze sind nicht getrennt! POS={pos}, NEG={neg}")
 ```
 
 ### B. Vertrag in `operations/registry.py` eintragen
 ```python
-from tcg.core.contracts import OperationContract, ParameterSpec, STIMULUS, TEARDOWN
+from tcg.core.contracts import OperationContract, ParameterSpec, STIMULUS, CHECK, TEARDOWN
 from tcg.core.parameters import String
-from operations.bms import emergency_disconnect
+from operations.bms import emergency_disconnect, expect_emergency_disconnect
 
 CONTRACT_EMERGENCY_DISCONNECT = OperationContract(
     name='emergency_disconnect',
@@ -114,9 +122,17 @@ CONTRACT_EMERGENCY_DISCONNECT = OperationContract(
     ),
     phases=STIMULUS | TEARDOWN,
 )
+
+CONTRACT_EXPECT_EMERGENCY_DISCONNECT = OperationContract(
+    name='expect_emergency_disconnect',
+    function=expect_emergency_disconnect,
+    docstring='Verifiziert die erfolgreiche Notabschaltung.',
+    parameters=(),
+    phases=CHECK,
+)
 ```
 
-Füge `CONTRACT_EMERGENCY_DISCONNECT` zum Aufruf von `build_registry([...])` in `operations/registry.py` hinzu.
+Füge die Verträge zur Liste in `operations/registry.py` hinzu. Eine ausführliche Kurzanleitung mit generiertem Python-Code findest du auch in [`operations/README.md`](file:///Users/cc/Desktop/SpecToTest/operations/README.md).
 
 ---
 
