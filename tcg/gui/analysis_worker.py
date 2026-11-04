@@ -30,16 +30,18 @@ class DocAnalysisRunnable(QRunnable):
         self,
         text: str,
         source_name: str,
+        doc_identity: str,
         registry: dict[str, Any],
         mapping_dicts: list[dict[str, Any]],
         profile: ResourceProfile,
         revision: int,
-        on_success: Callable[[CompilationResult, int], None],
-        on_error: Callable[[Exception, int], None],
+        on_success: Callable[[CompilationResult, str, int], None],
+        on_error: Callable[[Exception, str, int], None],
     ):
         super().__init__()
         self.text = text
         self.source_name = source_name
+        self.doc_identity = doc_identity
         self.registry = registry
         self.mapping_dicts = mapping_dicts
         self.profile = profile
@@ -57,9 +59,9 @@ class DocAnalysisRunnable(QRunnable):
                 profile=self.profile,
                 strict_project_check=True,
             )
-            self.on_success(result, self.revision)
+            self.on_success(result, self.doc_identity, self.revision)
         except Exception as e:
-            self.on_error(e, self.revision)
+            self.on_error(e, self.doc_identity, self.revision)
 
 
 class ProjectAnalysisRunnable(QRunnable):
@@ -158,11 +160,11 @@ class ProjectAnalysisRunnable(QRunnable):
 
 
 class BackgroundAnalysisManager(QObject):
-    """Coordinates background analysis jobs with revisions and protection against stale results."""
+    """Coordinates background analysis jobs with revisions, document identity, and protection against stale results."""
 
-    sig_doc_analysis_started = Signal(int)  # revision
-    sig_doc_analysis_finished = Signal(object, int)  # CompilationResult, revision
-    sig_doc_analysis_failed = Signal(str, int)  # error_msg, revision
+    sig_doc_analysis_started = Signal(str, int)  # doc_identity, revision
+    sig_doc_analysis_finished = Signal(object, str, int)  # CompilationResult, doc_identity, revision
+    sig_doc_analysis_failed = Signal(str, str, int)  # error_msg, doc_identity, revision
 
     sig_project_analysis_started = Signal(int)  # revision
     sig_project_analysis_finished = Signal(object, list, int)  # impacts, problems, revision
@@ -171,37 +173,65 @@ class BackgroundAnalysisManager(QObject):
     def __init__(self, parent: QObject | None = None):
         super().__init__(parent)
         self.current_doc_revision: int = 0
+        self.current_doc_identity: str = ""
         self.current_project_revision: int = 0
         self.thread_pool = QThreadPool.globalInstance()
+
+    def next_doc_revision(self, doc_identity: str | None = None) -> int:
+        """Increment and return the next document revision immediately upon edit or file switch.
+        
+        This immediately invalidates any in-flight background analyses for previous revisions.
+        """
+        self.current_doc_revision += 1
+        if doc_identity is not None:
+            self.current_doc_identity = doc_identity
+        return self.current_doc_revision
+
+    def next_project_revision(self) -> int:
+        """Increment and return the next project revision immediately upon project/mapping changes."""
+        self.current_project_revision += 1
+        return self.current_project_revision
 
     def schedule_doc_analysis(
         self,
         text: str,
         source_name: str,
-        registry: dict[str, Any],
-        mapping_dicts: list[dict[str, Any]],
-        profile: ResourceProfile,
+        doc_identity: str = "",
+        registry: dict[str, Any] | None = None,
+        mapping_dicts: list[dict[str, Any]] | None = None,
+        profile: ResourceProfile | None = None,
+        revision: int | None = None,
     ) -> int:
-        """Schedule an asynchronous document compilation with a new revision."""
-        self.current_doc_revision += 1
-        rev = self.current_doc_revision
-        self.sig_doc_analysis_started.emit(rev)
+        """Schedule an asynchronous document compilation.
+        
+        If revision is not provided, self.next_doc_revision() is used.
+        """
+        if not doc_identity:
+            doc_identity = source_name
+
+        if revision is None:
+            revision = self.next_doc_revision(doc_identity)
+        else:
+            self.current_doc_identity = doc_identity
+
+        self.sig_doc_analysis_started.emit(doc_identity, revision)
 
         # Create immutable snapshots of mappings
-        copied_mappings = [dict(m) for m in mapping_dicts]
+        copied_mappings = [dict(m) for m in (mapping_dicts or [])]
 
         task = DocAnalysisRunnable(
             text=text,
             source_name=source_name,
-            registry=registry,
+            doc_identity=doc_identity,
+            registry=registry or {},
             mapping_dicts=copied_mappings,
             profile=profile,
-            revision=rev,
+            revision=revision,
             on_success=self._on_doc_success,
             on_error=self._on_doc_error,
         )
         self.thread_pool.start(task)
-        return rev
+        return revision
 
     def schedule_project_analysis(
         self,
@@ -209,11 +239,13 @@ class BackgroundAnalysisManager(QObject):
         registry: dict[str, Any],
         mapping_dicts: list[dict[str, Any]],
         profile: ResourceProfile,
+        revision: int | None = None,
     ) -> int:
-        """Schedule an asynchronous project-wide impact analysis with a new revision."""
-        self.current_project_revision += 1
-        rev = self.current_project_revision
-        self.sig_project_analysis_started.emit(rev)
+        """Schedule an asynchronous project-wide impact analysis."""
+        if revision is None:
+            revision = self.current_project_revision
+
+        self.sig_project_analysis_started.emit(revision)
 
         copied_mappings = [dict(m) for m in mapping_dicts]
         task = ProjectAnalysisRunnable(
@@ -221,18 +253,18 @@ class BackgroundAnalysisManager(QObject):
             registry=registry,
             mapping_dicts=copied_mappings,
             profile=profile,
-            revision=rev,
+            revision=revision,
             on_success=self._on_project_success,
             on_error=self._on_project_error,
         )
         self.thread_pool.start(task)
-        return rev
+        return revision
 
-    def _on_doc_success(self, result: CompilationResult, revision: int):
-        self.sig_doc_analysis_finished.emit(result, revision)
+    def _on_doc_success(self, result: CompilationResult, doc_identity: str, revision: int):
+        self.sig_doc_analysis_finished.emit(result, doc_identity, revision)
 
-    def _on_doc_error(self, err: Exception, revision: int):
-        self.sig_doc_analysis_failed.emit(str(err), revision)
+    def _on_doc_error(self, err: Exception, doc_identity: str, revision: int):
+        self.sig_doc_analysis_failed.emit(str(err), doc_identity, revision)
 
     def _on_project_success(self, impacts: dict[str, MappingImpact], problems: list[InspectionProblem], revision: int):
         self.sig_project_analysis_finished.emit(impacts, problems, revision)

@@ -664,6 +664,9 @@ class SpecificationWorkspace(QWidget):
         self.load_spec_file(p)
 
     def load_spec_file(self, path: Path):
+        self.compile_timer.stop()
+        doc_identity = str(path.resolve())
+        self.analysis_manager.next_doc_revision(doc_identity)
         self.current_spec_path = path
         try:
             text = path.read_text(encoding='utf-8-sig')
@@ -689,6 +692,7 @@ class SpecificationWorkspace(QWidget):
         self.is_spec_dirty = True
         if self.current_spec_path:
             self.lbl_current_file.setText(f"{self.current_spec_path.name} (ungespeichert)")
+            self.analysis_manager.next_doc_revision(str(self.current_spec_path.resolve()))
         self.compile_timer.start()
 
     def trigger_background_doc_analysis(self):
@@ -698,13 +702,16 @@ class SpecificationWorkspace(QWidget):
         text = self.editor.toPlainText()
         name = self.current_spec_path.name
         mapping_dicts = self.state.get_mappings_dicts()
+        doc_identity = str(self.current_spec_path.resolve())
 
         self.analysis_manager.schedule_doc_analysis(
             text=text,
             source_name=name,
+            doc_identity=doc_identity,
             registry=self.state.registry,
             mapping_dicts=mapping_dicts,
             profile=self.state.profile,
+            revision=self.analysis_manager.current_doc_revision,
         )
 
     def trigger_background_project_analysis(self):
@@ -717,6 +724,7 @@ class SpecificationWorkspace(QWidget):
             registry=self.state.registry,
             mapping_dicts=mapping_dicts,
             profile=self.state.profile,
+            revision=self.analysis_manager.current_project_revision,
         )
 
     def compile_current_text(self, sync: bool = True):
@@ -745,17 +753,31 @@ class SpecificationWorkspace(QWidget):
         else:
             self.trigger_background_doc_analysis()
 
-    def on_doc_analysis_started(self, revision: int):
+    def on_doc_analysis_started(self, doc_identity: str = "", revision: int = 0):
+        curr_identity = str(self.current_spec_path.resolve()) if self.current_spec_path else ""
+        if revision != self.analysis_manager.current_doc_revision:
+            return
+        if doc_identity and curr_identity and doc_identity != curr_identity:
+            return
         self.lbl_analysis_status.setText(f"<span style='color: #3b82f6;'>● Prüfung läuft (Rev. {revision})...</span>")
 
-    def on_doc_analysis_finished(self, result: CompilationResult, revision: int):
-        if revision != self.analysis_manager.current_doc_revision:
-            self.lbl_analysis_status.setText("<span style='color: #94a3b8;'>Ergebnis veraltet</span>")
+    def on_doc_analysis_finished(self, result: CompilationResult, doc_identity: str = "", revision: int = 0):
+        curr_identity = str(self.current_spec_path.resolve()) if self.current_spec_path else ""
+
+        is_stale_revision = (revision != self.analysis_manager.current_doc_revision)
+        is_different_doc = bool(curr_identity and doc_identity and doc_identity != curr_identity)
+
+        if is_stale_revision or is_different_doc:
+            if not is_different_doc:
+                self.lbl_analysis_status.setText("<span style='color: #94a3b8;'>Ergebnis veraltet</span>")
             return
         self.apply_doc_result(result, revision)
 
-    def on_doc_analysis_failed(self, error_msg: str, revision: int):
+    def on_doc_analysis_failed(self, error_msg: str, doc_identity: str = "", revision: int = 0):
+        curr_identity = str(self.current_spec_path.resolve()) if self.current_spec_path else ""
         if revision != self.analysis_manager.current_doc_revision:
+            return
+        if doc_identity and curr_identity and doc_identity != curr_identity:
             return
         self.lbl_analysis_status.setText("<span style='color: #ef4444;'>⚠ Analysefehler</span>")
 

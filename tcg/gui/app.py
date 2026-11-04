@@ -215,7 +215,12 @@ class MappingStudioWindow(QMainWindow):
     def on_state_changed(self):
         self.update_header_stats()
         self.workspace_catalog.refresh()
-        self.workspace_specs.compile_current_text()
+        if hasattr(self, 'workspace_specs'):
+            self.workspace_specs.compile_timer.stop()
+            self.workspace_specs.analysis_manager.next_doc_revision()
+            self.workspace_specs.analysis_manager.next_project_revision()
+            self.workspace_specs.compile_current_text(sync=True)
+            self.workspace_specs.trigger_background_project_analysis()
         self.status_bar.showMessage(f"Änderung erfasst ({len(self.state.mappings)} Mappings)", 4000)
 
     def switch_to_tester_with_sentence(self, sentence: str):
@@ -249,6 +254,10 @@ class MappingStudioWindow(QMainWindow):
             )
             return
 
+        if hasattr(self, 'workspace_specs'):
+            self.workspace_specs.compile_timer.stop()
+            self.workspace_specs.analysis_manager.next_doc_revision()
+            self.workspace_specs.analysis_manager.next_project_revision()
         self.workspace_specs.refresh_spec_list()
         self.on_state_changed()
         self.status_bar.showMessage(f"Projektprofil gewechselt zu: {profile.name}", 5000)
@@ -273,6 +282,10 @@ class MappingStudioWindow(QMainWindow):
         if resources:
             self.state.resources_file = Path(resources)
         self.state.reload_all()
+        if hasattr(self, 'workspace_specs'):
+            self.workspace_specs.compile_timer.stop()
+            self.workspace_specs.analysis_manager.next_doc_revision()
+            self.workspace_specs.analysis_manager.next_project_revision()
         self.on_state_changed()
         self.status_bar.showMessage(f"Registry gewechselt zu: {target}", 5000)
 

@@ -503,3 +503,59 @@ class GuiWindowWorkspacesIntegrationTests(unittest.TestCase):
         specs.set_problem_filter("Projekt")
         proj_count = sum(1 for p in specs.all_problems if p.level == "Projekt")
         self.assertEqual(specs.error_table.rowCount(), proj_count)
+
+    def test_file_switch_during_running_analysis_discards_stale_result(self):
+        win = MappingStudioWindow()
+        specs = win.workspace_specs
+        mgr = specs.analysis_manager
+
+        # Find two different spec files in the workspace
+        self.assertTrue(len(specs.all_spec_files) >= 2)
+        file_a = specs.all_spec_files[0]
+        file_b = specs.all_spec_files[1]
+        self.assertNotEqual(file_a, file_b)
+
+        # 1. Load File A
+        specs.load_spec_file(file_a)
+        rev_a = mgr.current_doc_revision
+        doc_id_a = str(file_a.resolve())
+        self.assertEqual(specs.current_spec_path, file_a)
+
+        # Prepare a distinct compilation result representing File A
+        result_a = CompilationFacade.compile_text(
+            text=file_a.read_text(encoding="utf-8-sig"),
+            source_name=file_a.name,
+            registry=win.state.registry,
+            mapping_dicts=win.state.get_mappings_dicts(),
+            profile=win.state.profile,
+        )
+
+        # 2. Switch to File B while File A's check is theoretically "in-flight"
+        specs.load_spec_file(file_b)
+        rev_b = mgr.current_doc_revision
+        doc_id_b = str(file_b.resolve())
+        self.assertEqual(specs.current_spec_path, file_b)
+        # Revision must have increased immediately upon loading File B
+        self.assertGreater(rev_b, rev_a)
+
+        # File B's compilation result must be active
+        self.assertEqual(specs.last_compilation_result.source_name, file_b.name)
+        code_b = specs.code_view.toPlainText()
+        self.assertTrue(len(code_b) > 0)
+
+        # 3. Simulate delayed arrival of File A's result (with obsolete rev_a)
+        specs.on_doc_analysis_finished(result_a, doc_identity=doc_id_a, revision=rev_a)
+
+        # Assert: File B is still the active file and was NOT overwritten by File A
+        self.assertEqual(specs.current_spec_path, file_b)
+        self.assertEqual(specs.last_compilation_result.source_name, file_b.name)
+        self.assertEqual(specs.code_view.toPlainText(), code_b)
+
+        # 4. Simulate edge case: delayed arrival with matched revision but mismatched doc_identity
+        specs.on_doc_analysis_finished(result_a, doc_identity=doc_id_a, revision=rev_b)
+
+        # Assert: Even with matching revision, document identity mismatch discards the stale result
+        self.assertEqual(specs.current_spec_path, file_b)
+        self.assertEqual(specs.last_compilation_result.source_name, file_b.name)
+        self.assertEqual(specs.code_view.toPlainText(), code_b)
+
