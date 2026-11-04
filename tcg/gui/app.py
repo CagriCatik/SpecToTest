@@ -10,6 +10,7 @@ from PySide6.QtGui import QAction, QFont, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
+    QFrame,
     QHBoxLayout,
     QInputDialog,
     QLabel,
@@ -111,21 +112,57 @@ class MappingStudioWindow(QMainWindow):
 
         # 2. Top Summary Bar
         top_widget = QWidget()
-        top_layout = QHBoxLayout(top_widget)
-        top_layout.setContentsMargins(14, 8, 14, 8)
+        top_vlayout = QVBoxLayout(top_widget)
+        top_vlayout.setContentsMargins(14, 8, 14, 6)
+        top_vlayout.setSpacing(6)
+
+        header_row = QHBoxLayout()
+        header_row.setSpacing(10)
 
         self.lbl_profile_info = QLabel()
-        self.lbl_profile_info.setFont(QFont("", 10, QFont.Weight.Bold))
-        top_layout.addWidget(self.lbl_profile_info, stretch=2)
+        self.lbl_profile_info.setFont(QFont("", 11, QFont.Weight.Bold))
+        header_row.addWidget(self.lbl_profile_info)
+
+        self.btn_toggle_details = QPushButton("Details ▼")
+        self.btn_toggle_details.setCheckable(True)
+        self.btn_toggle_details.setChecked(False)
+        self.btn_toggle_details.clicked.connect(self.toggle_details_panel)
+        header_row.addWidget(self.btn_toggle_details)
+
+        header_row.addStretch()
 
         self.lbl_stats = QLabel()
         self.lbl_stats.setTextFormat(Qt.TextFormat.RichText)
-        top_layout.addWidget(self.lbl_stats, stretch=2)
+        header_row.addWidget(self.lbl_stats)
 
-        btn_save_quick = QPushButton("Mappings speichern")
-        btn_save_quick.setStyleSheet("background-color: #16a34a; color: white; font-weight: bold; padding: 4px 12px; border-radius: 4px;")
-        btn_save_quick.clicked.connect(self.action_save_file)
-        top_layout.addWidget(btn_save_quick)
+        self.btn_save_quick = QPushButton("Mappings speichern")
+        self.btn_save_quick.clicked.connect(self.action_save_file)
+        header_row.addWidget(self.btn_save_quick)
+
+        top_vlayout.addLayout(header_row)
+
+        # Collapsible technical details frame
+        self.details_frame = QFrame()
+        self.details_frame.setFrameShape(QFrame.Shape.StyledPanel)
+        self.details_frame.setVisible(False)
+        det_layout = QHBoxLayout(self.details_frame)
+        det_layout.setContentsMargins(10, 6, 10, 6)
+        det_layout.setSpacing(16)
+
+        self.lbl_det_mapping = QLabel()
+        self.lbl_det_mapping.setTextFormat(Qt.TextFormat.RichText)
+        det_layout.addWidget(self.lbl_det_mapping)
+
+        self.lbl_det_registry = QLabel()
+        self.lbl_det_registry.setTextFormat(Qt.TextFormat.RichText)
+        det_layout.addWidget(self.lbl_det_registry)
+
+        self.lbl_det_resources = QLabel()
+        self.lbl_det_resources.setTextFormat(Qt.TextFormat.RichText)
+        det_layout.addWidget(self.lbl_det_resources)
+
+        det_layout.addStretch()
+        top_vlayout.addWidget(self.details_frame)
 
         # 3. Main Central Workspaces (Tabs)
         self.tabs = QTabWidget()
@@ -184,9 +221,17 @@ class MappingStudioWindow(QMainWindow):
         filename = self.state.mapping_file.name if self.state.mapping_file else "Neu.toml"
         dirty_mark = " (ungespeichert)" if self.state.is_dirty else ""
 
-        self.lbl_profile_info.setText(
-            f"Profil: <b>{prof_name}</b> &nbsp;|&nbsp; Datei: <code>{filename}{dirty_mark}</code>"
-        )
+        # Left: Clean project name
+        self.lbl_profile_info.setText(f"{prof_name}{dirty_mark}")
+        self.setWindowTitle(f"SpecToTest Studio — {prof_name} [{filename}{dirty_mark}]")
+
+        # Collapsible technical details frame
+        reg_target = self.state.profile_config.registry_target or "-"
+        rf = self.state.profile_config.resources_file
+        res_file = Path(rf).name if rf else "-"
+        self.lbl_det_mapping.setText(f"<span style='color: #94a3b8;'>Mapping-Datei:</span> <code>{filename}</code>")
+        self.lbl_det_registry.setText(f"<span style='color: #94a3b8;'>Registry:</span> <code>{reg_target}</code>")
+        self.lbl_det_resources.setText(f"<span style='color: #94a3b8;'>Ressourcen:</span> <code>{res_file}</code>")
 
         total_maps = len(self.state.mappings)
         valid_maps = sum(1 for m in self.state.mappings if m.is_valid and not m.has_conflict)
@@ -195,22 +240,31 @@ class MappingStudioWindow(QMainWindow):
         mapped_ops = sum(1 for op in self.state.operations.values() if op.is_mapped)
         unmapped_ops = total_ops - mapped_ops
 
-        conflict_badge = f"<span style='color: #ef4444; font-weight: bold;'>{conflicts} Konflikt(e)</span>" if conflicts else ""
-        unmapped_badge = (
-            f"<span style='color: #10b981; font-weight: bold;'>0 Lücken</span>"
-            if unmapped_ops == 0 else
-            f"<span style='color: #ef4444; font-weight: bold;'>{unmapped_ops} ungemappte Lücken</span>"
-        )
-
         stat_parts = [
-            f"<b>Mappings:</b> {valid_maps}/{total_maps} gültig",
-            f"<b>Operationen:</b> {mapped_ops}/{total_ops} abgedeckt ({unmapped_badge})"
+            f"<b>{valid_maps}/{total_maps}</b> Mappings",
+            f"<b>{mapped_ops}/{total_ops}</b> Operationen mit gültigem Satzmuster",
         ]
-        if conflict_badge:
-            stat_parts.append(conflict_badge)
+        if unmapped_ops > 0:
+            stat_parts.append(f"<span style='color: #ef4444;'>({unmapped_ops} Lücken)</span>")
+        if conflicts > 0:
+            stat_parts.append(f"<span style='color: #ef4444; font-weight: bold;'>{conflicts} Konflikt(e)</span>")
 
         self.lbl_stats.setText(" &nbsp;|&nbsp; ".join(stat_parts))
-        self.setWindowTitle(f"SpecToTest Studio — {prof_name} [{filename}{dirty_mark}]")
+
+        # Update save button styling
+        if hasattr(self, 'btn_save_quick'):
+            if self.state.is_dirty:
+                self.btn_save_quick.setProperty("primary", "true")
+                self.btn_save_quick.setText("Mappings speichern *")
+            else:
+                self.btn_save_quick.setProperty("primary", "false")
+                self.btn_save_quick.setText("Mappings speichern")
+            self.btn_save_quick.style().unpolish(self.btn_save_quick)
+            self.btn_save_quick.style().polish(self.btn_save_quick)
+
+    def toggle_details_panel(self, checked: bool):
+        self.details_frame.setVisible(checked)
+        self.btn_toggle_details.setText("Details ▲" if checked else "Details ▼")
 
     def on_state_changed(self):
         self.update_header_stats()

@@ -78,13 +78,13 @@ class SentenceTesterWidget(QWidget):
         input_box.addWidget(self.phase_combo)
 
         self.btn_test = QPushButton("Satz prüfen")
-        self.btn_test.setStyleSheet("background-color: #2563eb; color: white; font-weight: bold; padding: 6px 16px; border-radius: 4px;")
+        self.btn_test.setProperty("primary", "true")
         self.btn_test.clicked.connect(self.run_test)
         input_box.addWidget(self.btn_test)
 
         layout.addLayout(input_box)
 
-        # 3. Output Card
+        # 3. Output Card (Compact beneath input)
         self.result_card = QGroupBox("Ergebnis der Satzanalyse")
         res_layout = QVBoxLayout(self.result_card)
 
@@ -100,6 +100,7 @@ class SentenceTesterWidget(QWidget):
         res_layout.addWidget(self.details_edit)
 
         layout.addWidget(self.result_card)
+        layout.addStretch()
 
     def on_preset_selected(self):
         txt = self.preset_combo.currentData()

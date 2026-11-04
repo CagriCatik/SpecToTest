@@ -26,6 +26,8 @@ from PySide6.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
     QTextEdit,
+    QTreeWidget,
+    QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -57,6 +59,24 @@ def detect_phase_at_cursor(editor: QTextEdit) -> str:
             return "ACTION"
         block = block.previous()
     return "ACTION"
+
+
+class SpecFileTreeWidget(QTreeWidget):
+    """Hierarchical category tree for test specification files."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setHeaderHidden(True)
+        self.setIndentation(16)
+        self.setAnimated(True)
+
+    def count(self) -> int:
+        """Return total number of file items across all categories for test compatibility."""
+        total = 0
+        for i in range(self.topLevelItemCount()):
+            cat = self.topLevelItem(i)
+            total += cat.childCount()
+        return total
 
 
 class SpecCodeEditor(QTextEdit):
@@ -174,9 +194,7 @@ class StepAssistantWidget(QWidget):
 
         # 6. Action Button
         self.btn_insert = QPushButton("Schritt in Spezifikation einfügen")
-        self.btn_insert.setStyleSheet(
-            "background-color: #16a34a; color: white; font-weight: bold; padding: 8px 14px; border-radius: 4px;"
-        )
+        self.btn_insert.setProperty("primary", "true")
         self.btn_insert.clicked.connect(self.on_insert_clicked)
         layout.addWidget(self.btn_insert)
 
@@ -188,10 +206,9 @@ class StepAssistantWidget(QWidget):
         self.current_phase = phase
         is_check = phase in ("EXPECTED_RESULT", "EXPECTED", "CHECK")
         phase_label = "EXPECTED RESULT (Prüfung)" if is_check else f"{phase} (Setup)"
-        color = "#34d399" if is_check else "#60a5fa"
-        self.lbl_phase_badge.setText(f"Erkannte Phase am Cursor: <b>{phase_label}</b>")
+        self.lbl_phase_badge.setText(f"Erkannte Phase: <b>{phase_label}</b>")
         self.lbl_phase_badge.setStyleSheet(
-            f"background-color: rgba(59, 130, 246, 0.15); color: {color}; padding: 6px; border-radius: 4px;"
+            "border: 1px solid rgba(13, 110, 253, 0.3); background-color: rgba(13, 110, 253, 0.08); padding: 5px 8px; border-radius: 4px;"
         )
 
         prev_op = self.combo_ops.currentData()
@@ -379,7 +396,7 @@ class SpecificationWorkspace(QWidget):
         file_panel = QWidget()
         file_layout = QVBoxLayout(file_panel)
         file_layout.setContentsMargins(0, 0, 0, 0)
-        file_layout.setSpacing(8)
+        file_layout.setSpacing(6)
 
         file_header = QLabel("<b>Spezifikationsdateien</b>")
         file_layout.addWidget(file_header)
@@ -389,11 +406,12 @@ class SpecificationWorkspace(QWidget):
         self.file_search.textChanged.connect(self.filter_file_list)
         file_layout.addWidget(self.file_search)
 
-        self.file_list = QListWidget()
-        self.file_list.itemSelectionChanged.connect(self.on_file_selected)
-        file_layout.addWidget(self.file_list)
+        self.file_tree = SpecFileTreeWidget(self)
+        self.file_tree.itemSelectionChanged.connect(self.on_file_selected)
+        file_layout.addWidget(self.file_tree)
+        self.file_list = self.file_tree  # Backward compatibility alias
 
-        btn_refresh_files = QPushButton("Dateiliste aktualisieren")
+        btn_refresh_files = QPushButton("Aktualisieren")
         btn_refresh_files.clicked.connect(self.refresh_spec_list)
         file_layout.addWidget(btn_refresh_files)
 
@@ -403,9 +421,11 @@ class SpecificationWorkspace(QWidget):
         editor_panel = QWidget()
         editor_layout = QVBoxLayout(editor_panel)
         editor_layout.setContentsMargins(0, 0, 0, 0)
-        editor_layout.setSpacing(8)
+        editor_layout.setSpacing(6)
 
         editor_top = QHBoxLayout()
+        editor_top.setSpacing(8)
+
         self.lbl_current_file = QLabel("Keine Datei geöffnet")
         self.lbl_current_file.setFont(QFont("", 10, QFont.Weight.Bold))
         editor_top.addWidget(self.lbl_current_file, stretch=2)
@@ -415,8 +435,7 @@ class SpecificationWorkspace(QWidget):
         self.lbl_analysis_status.setFont(QFont("", 9, QFont.Weight.Bold))
         editor_top.addWidget(self.lbl_analysis_status)
 
-        self.btn_save_spec = QPushButton("Spezifikation speichern")
-        self.btn_save_spec.setStyleSheet("background-color: #16a34a; color: white; font-weight: bold; padding: 4px 12px; border-radius: 4px;")
+        self.btn_save_spec = QPushButton("Speichern")
         self.btn_save_spec.clicked.connect(self.save_current_spec)
         self.btn_save_spec.setEnabled(False)
         editor_top.addWidget(self.btn_save_spec)
@@ -426,10 +445,16 @@ class SpecificationWorkspace(QWidget):
         self.btn_recompile.setEnabled(False)
         editor_top.addWidget(self.btn_recompile)
 
+        self.btn_toggle_inspector = QPushButton("Inspektor")
+        self.btn_toggle_inspector.setCheckable(True)
+        self.btn_toggle_inspector.setChecked(True)
+        self.btn_toggle_inspector.clicked.connect(lambda checked: self.right_panel.setVisible(checked))
+        editor_top.addWidget(self.btn_toggle_inspector)
+
         editor_layout.addLayout(editor_top)
 
         # Vertical Splitter: Editor above, Multi-Tier Problem Table below
-        edit_splitter = QSplitter(Qt.Orientation.Vertical)
+        self.edit_splitter = QSplitter(Qt.Orientation.Vertical)
 
         self.editor = SpecCodeEditor()
         self.editor.setFont(get_monospace_font(10))
@@ -437,15 +462,34 @@ class SpecificationWorkspace(QWidget):
         self.highlighter = SpecSyntaxHighlighter(self.editor.document(), dark_theme=True)
         self.editor.cursorPositionChanged.connect(self.on_cursor_position_changed)
         self.editor.textChanged.connect(self.on_editor_text_changed)
-        edit_splitter.addWidget(self.editor)
+        self.edit_splitter.addWidget(self.editor)
 
-        # Multi-Tier Problem List Panel
-        problem_group = QGroupBox("Gemeinsame Problemliste (Schritt • Dokument • Projekt)")
-        prob_layout = QVBoxLayout(problem_group)
-        prob_layout.setContentsMargins(4, 8, 4, 4)
-        prob_layout.setSpacing(6)
+        # Multi-Tier Problem List Panel (Collapsible)
+        problem_group = QWidget()
+        prob_main_layout = QVBoxLayout(problem_group)
+        prob_main_layout.setContentsMargins(0, 4, 0, 0)
+        prob_main_layout.setSpacing(4)
+
+        prob_header = QHBoxLayout()
+        prob_header.setSpacing(8)
+
+        self.btn_toggle_problems = QPushButton("Problemliste (0) ▼")
+        self.btn_toggle_problems.setCheckable(True)
+        self.btn_toggle_problems.setChecked(False)
+        self.btn_toggle_problems.clicked.connect(self.toggle_problems_panel)
+        prob_header.addWidget(self.btn_toggle_problems)
+
+        prob_header.addStretch()
+        prob_main_layout.addLayout(prob_header)
+
+        self.problem_content = QWidget()
+        prob_content_layout = QVBoxLayout(self.problem_content)
+        prob_content_layout.setContentsMargins(0, 0, 0, 0)
+        prob_content_layout.setSpacing(6)
 
         filter_row = QHBoxLayout()
+        filter_row.setSpacing(6)
+
         self.btn_filter_all = QPushButton("Alle (0)")
         self.btn_filter_all.setCheckable(True)
         self.btn_filter_all.setChecked(True)
@@ -474,7 +518,7 @@ class SpecificationWorkspace(QWidget):
         self.filter_btn_group.addButton(self.btn_filter_proj)
 
         filter_row.addStretch()
-        prob_layout.addLayout(filter_row)
+        prob_content_layout.addLayout(filter_row)
 
         self.error_table = QTableWidget(0, 5)
         self.error_table.setHorizontalHeaderLabels(["Ebene", "Typ", "Datei", "Zeile", "Meldung / Ursache"])
@@ -486,19 +530,22 @@ class SpecificationWorkspace(QWidget):
         self.error_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         self.error_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
         self.error_table.itemDoubleClicked.connect(self.on_problem_double_clicked)
-        prob_layout.addWidget(self.error_table)
+        prob_content_layout.addWidget(self.error_table)
 
-        edit_splitter.addWidget(problem_group)
-        edit_splitter.setStretchFactor(0, 4)
-        edit_splitter.setStretchFactor(1, 1)
+        prob_main_layout.addWidget(self.problem_content)
+        self.problem_content.setVisible(False)
 
-        editor_layout.addWidget(edit_splitter)
+        self.edit_splitter.addWidget(problem_group)
+        self.edit_splitter.setStretchFactor(0, 5)
+        self.edit_splitter.setStretchFactor(1, 1)
+
+        editor_layout.addWidget(self.edit_splitter)
         main_splitter.addWidget(editor_panel)
 
         # --- RIGHT: Translation Inspector, Step Assistant & Code Preview ---
-        right_panel = QTabWidget()
+        self.right_panel = QTabWidget()
 
-        # Tab 1: Schritt-Inspektor
+        # Tab 1: Details (Schritt-Inspektor)
         step_tab = QWidget()
         step_layout = QVBoxLayout(step_tab)
         step_layout.setContentsMargins(10, 10, 10, 10)
@@ -557,14 +604,16 @@ class SpecificationWorkspace(QWidget):
         step_layout.addWidget(self.insp_call_code)
 
         step_layout.addStretch()
-        right_panel.addTab(step_tab, "Schritt-Inspektor")
+        self.right_panel.addTab(step_tab, "Details")
+        self.right_panel.setTabToolTip(0, "Schritt-Inspektor für die ausgewählte Zeile")
 
         # Tab 2: Schritt einfügen (Integrated Step Assistant)
         self.step_assistant = StepAssistantWidget(self.state, parent=self)
         self.step_assistant.insert_requested.connect(self.insert_statement_at_cursor)
-        right_panel.addTab(self.step_assistant, "Schritt einfügen")
+        self.right_panel.addTab(self.step_assistant, "Schritt einfügen")
+        self.right_panel.setTabToolTip(1, "Kontextbezogenen Testschritt formulieren und einfügen")
 
-        # Tab 3: Python-Vorschau
+        # Tab 3: Python (Python-Vorschau)
         code_tab = QWidget()
         code_layout = QVBoxLayout(code_tab)
         code_layout.setContentsMargins(10, 10, 10, 10)
@@ -579,13 +628,15 @@ class SpecificationWorkspace(QWidget):
         self.code_view.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
         code_layout.addWidget(self.code_view)
 
-        right_panel.addTab(code_tab, "Python-Vorschau")
+        self.right_panel.addTab(code_tab, "Python")
+        self.right_panel.setTabToolTip(2, "Generierter Python-Testfallcode")
 
-        main_splitter.addWidget(right_panel)
+        main_splitter.addWidget(self.right_panel)
 
-        main_splitter.setStretchFactor(0, 1)
-        main_splitter.setStretchFactor(1, 3)
+        main_splitter.setStretchFactor(0, 0)
+        main_splitter.setStretchFactor(1, 4)
         main_splitter.setStretchFactor(2, 2)
+        main_splitter.setSizes([260, 560, 360])
 
         main_layout.addWidget(main_splitter)
 
@@ -611,17 +662,46 @@ class SpecificationWorkspace(QWidget):
 
     def filter_file_list(self):
         query = self.file_search.text().lower().strip()
-        self.file_list.clear()
+        self.file_tree.clear()
 
+        # Group files by category (immediate parent folder)
+        categories: dict[str, list[Path]] = {}
         for f in self.all_spec_files:
-            if query and query not in f.name.lower():
-                continue
-            item = QListWidgetItem(f.name)
-            item.setData(Qt.ItemDataRole.UserRole, str(f))
-            self.file_list.addItem(item)
+            cat = f.parent.name or "Allgemein"
+            categories.setdefault(cat, []).append(f)
 
-        if self.file_list.count() > 0 and not self.current_spec_path:
-            self.file_list.setCurrentRow(0)
+        first_file_item: QTreeWidgetItem | None = None
+        selected_item: QTreeWidgetItem | None = None
+
+        for cat_name, files in sorted(categories.items()):
+            matching = [
+                f for f in files
+                if not query or query in f.name.lower() or query in cat_name.lower()
+            ]
+            if not matching and query:
+                continue
+
+            cat_item = QTreeWidgetItem(self.file_tree)
+            cat_item.setText(0, f"{cat_name} ({len(matching)})")
+            cat_item.setFont(0, QFont("", 10, QFont.Weight.Bold))
+            cat_item.setData(0, Qt.ItemDataRole.UserRole, "")
+            cat_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
+            cat_item.setExpanded(True)
+
+            for f in matching:
+                f_item = QTreeWidgetItem(cat_item)
+                f_item.setText(0, f.name)
+                f_item.setToolTip(0, str(f.resolve()))
+                f_item.setData(0, Qt.ItemDataRole.UserRole, str(f.resolve()))
+                if first_file_item is None:
+                    first_file_item = f_item
+                if self.current_spec_path and f.resolve() == self.current_spec_path.resolve():
+                    selected_item = f_item
+
+        if selected_item:
+            self.file_tree.setCurrentItem(selected_item)
+        elif first_file_item and not self.current_spec_path:
+            self.file_tree.setCurrentItem(first_file_item)
 
     def prompt_save_spec_if_dirty(self) -> bool:
         if not self.is_spec_dirty or not self.current_spec_path:
@@ -645,26 +725,38 @@ class SpecificationWorkspace(QWidget):
             return False
 
     def on_file_selected(self):
-        items = self.file_list.selectedItems()
+        items = self.file_tree.selectedItems()
         if not items:
             return
-        path_str = items[0].data(Qt.ItemDataRole.UserRole)
-        p = Path(path_str)
+        path_str = items[0].data(0, Qt.ItemDataRole.UserRole)
+        if not path_str:
+            # Clicked a category header -> toggle expand
+            items[0].setExpanded(not items[0].isExpanded())
+            return
 
-        if self.current_spec_path and p == self.current_spec_path:
+        p = Path(path_str)
+        if self.current_spec_path and p.resolve() == self.current_spec_path.resolve():
             return
 
         if not self.prompt_save_spec_if_dirty():
-            for i in range(self.file_list.count()):
-                it = self.file_list.item(i)
-                if it.data(Qt.ItemDataRole.UserRole) == str(self.current_spec_path):
-                    self.file_list.blockSignals(True)
-                    self.file_list.setCurrentItem(it)
-                    self.file_list.blockSignals(False)
-                    break
+            self._select_file_in_tree(self.current_spec_path)
             return
 
         self.load_spec_file(p)
+
+    def _select_file_in_tree(self, path: Path | None):
+        if not path:
+            return
+        target = str(path.resolve())
+        for i in range(self.file_tree.topLevelItemCount()):
+            cat = self.file_tree.topLevelItem(i)
+            for j in range(cat.childCount()):
+                child = cat.child(j)
+                if child.data(0, Qt.ItemDataRole.UserRole) == target:
+                    self.file_tree.blockSignals(True)
+                    self.file_tree.setCurrentItem(child)
+                    self.file_tree.blockSignals(False)
+                    return
 
     def load_spec_file(self, path: Path):
         self.compile_timer.stop()
@@ -681,7 +773,12 @@ class SpecificationWorkspace(QWidget):
 
             self.lbl_current_file.setText(f"{path.name} ({path.parent.name})")
             self.btn_save_spec.setEnabled(True)
+            self.btn_save_spec.setProperty("primary", "false")
+            self.btn_save_spec.setText("Speichern")
+            self.btn_save_spec.style().unpolish(self.btn_save_spec)
+            self.btn_save_spec.style().polish(self.btn_save_spec)
             self.btn_recompile.setEnabled(True)
+            self._select_file_in_tree(path)
             self.compile_current_text(sync=True)
         except Exception as e:
             self.is_loading_file = False
@@ -696,7 +793,12 @@ class SpecificationWorkspace(QWidget):
         if self.current_spec_path:
             self.lbl_current_file.setText(f"{self.current_spec_path.name} (ungespeichert)")
             self.analysis_manager.next_doc_revision(str(self.current_spec_path.resolve()))
+        self.btn_save_spec.setProperty("primary", "true")
+        self.btn_save_spec.setText("Speichern *")
+        self.btn_save_spec.style().unpolish(self.btn_save_spec)
+        self.btn_save_spec.style().polish(self.btn_save_spec)
         self.lbl_analysis_status.setText("<span style='color: #94a3b8;'>Ergebnis veraltet</span>")
+        self.lbl_analysis_status.setToolTip("Dokument geändert, Neuübersetzung steht aus")
         self.compile_timer.start()
 
     def trigger_background_doc_analysis(self):
@@ -763,7 +865,8 @@ class SpecificationWorkspace(QWidget):
             return
         if doc_identity and curr_identity and doc_identity != curr_identity:
             return
-        self.lbl_analysis_status.setText(f"<span style='color: #3b82f6;'>● Prüfung läuft (Rev. {revision})...</span>")
+        self.lbl_analysis_status.setText("<span style='color: #0d6efd;'>Prüfung läuft...</span>")
+        self.lbl_analysis_status.setToolTip(f"Revision {revision} in Bearbeitung...")
 
     def on_doc_analysis_finished(self, result: CompilationResult, doc_identity: str = "", revision: int = 0):
         curr_identity = str(self.current_spec_path.resolve()) if self.current_spec_path else ""
@@ -783,19 +886,31 @@ class SpecificationWorkspace(QWidget):
             return
         if doc_identity and curr_identity and doc_identity != curr_identity:
             return
-        self.lbl_analysis_status.setText("<span style='color: #ef4444;'>⚠ Analysefehler</span>")
+        self.lbl_analysis_status.setText("<span style='color: #ef4444;'>Analysefehler</span>")
+        self.lbl_analysis_status.setToolTip(error_msg)
 
     def apply_doc_result(self, result: CompilationResult, revision: int):
         self.last_compilation_result = result
         if result.success:
-            self.lbl_analysis_status.setText(f"<span style='color: #10b981;'>✔ Aktuell geprüft (Rev. {revision})</span>")
+            self.lbl_analysis_status.setText("<span style='color: #10b981; font-weight: 600;'>Prüfung aktuell</span>")
+            self.lbl_analysis_status.setToolTip(f"Revision {revision} erfolgreich übersetzt")
             self.code_view.setPlainText(result.python_code)
         else:
-            self.lbl_analysis_status.setText(f"<span style='color: #ef4444;'>⚠ Fehler erfasst (Rev. {revision})</span>")
+            self.lbl_analysis_status.setText("<span style='color: #ef4444; font-weight: 600;'>Prüfung fehlerhaft</span>")
+            self.lbl_analysis_status.setToolTip(f"Revision {revision}: {result.summary}")
             self.code_view.setPlainText(f"# FEHLERHAFTE ÜBERSETZUNG:\n# {result.summary}\n\n{result.python_code}")
 
         self.rebuild_problem_list()
         self.on_cursor_position_changed()
+
+    def toggle_problems_panel(self, checked: bool):
+        self.problem_content.setVisible(checked)
+        count = len(self.all_problems)
+        self.btn_toggle_problems.setText(f"Problemliste ({count}) {'▲' if checked else '▼'}")
+        if checked:
+            self.edit_splitter.setSizes([450, 150])
+        else:
+            self.edit_splitter.setSizes([600, 30])
 
     def on_project_analysis_finished(self, impacts: Any, problems: list[InspectionProblem], revision: int):
         if revision != self.analysis_manager.current_project_revision:
@@ -862,6 +977,15 @@ class SpecificationWorkspace(QWidget):
         n_step = sum(1 for p in self.all_problems if p.level == "Schritt")
         n_doc = sum(1 for p in self.all_problems if p.level == "Dokument")
         n_proj = sum(1 for p in self.all_problems if p.level == "Projekt")
+        n_errors = sum(1 for p in self.all_problems if p.severity == "Fehler")
+
+        if hasattr(self, 'btn_toggle_problems'):
+            if n_errors > 0 and not self.btn_toggle_problems.isChecked():
+                self.btn_toggle_problems.setChecked(True)
+                self.problem_content.setVisible(True)
+                self.edit_splitter.setSizes([450, 150])
+            is_open = self.btn_toggle_problems.isChecked()
+            self.btn_toggle_problems.setText(f"Problemliste ({n_all}) {'▲' if is_open else '▼'}")
 
         self.btn_filter_all.setText(f"Alle ({n_all})")
         self.btn_filter_step.setText(f"Schritt ({n_step})")
@@ -1030,6 +1154,10 @@ class SpecificationWorkspace(QWidget):
             self.editor.document().setModified(False)
             self.is_spec_dirty = False
             self.lbl_current_file.setText(f"{self.current_spec_path.name} ({self.current_spec_path.parent.name})")
+            self.btn_save_spec.setProperty("primary", "false")
+            self.btn_save_spec.setText("Speichern")
+            self.btn_save_spec.style().unpolish(self.btn_save_spec)
+            self.btn_save_spec.style().polish(self.btn_save_spec)
             self.on_change()
             self.compile_current_text(sync=True)
             self.trigger_background_project_analysis()

@@ -190,9 +190,10 @@ class OperationsView(QWidget):
             self.filtered_op_names.append(op_name)
 
             # 0. Status
-            status_text = "Gültig verknüpft" if op_info.is_mapped else "Lücke"
+            status_text = "Verknüpft" if op_info.is_mapped else "Lücke"
             status_item = QTableWidgetItem(status_text)
-            status_item.setForeground(QColor("#10b981" if op_info.is_mapped else "#ef4444"))
+            if not op_info.is_mapped:
+                status_item.setForeground(QColor("#ef4444"))
             status_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             self.table.setItem(row, 0, status_item)
 

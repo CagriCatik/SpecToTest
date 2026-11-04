@@ -184,13 +184,13 @@ class CatalogWorkspace(QWidget):
             if filter_mode == 2 and op_info.is_mapped:
                 continue
 
-            status_str = f"[{op_info.valid_mappings_count} Muster]" if op_info.is_mapped else "[Lücke]"
-            item = QListWidgetItem(f"{op_name}  {status_str}")
-            item.setData(Qt.ItemDataRole.UserRole, op_name)
             if not op_info.is_mapped:
+                item = QListWidgetItem(f"{op_name}  [Lücke]")
                 item.setForeground(QColor("#ef4444"))
             else:
-                item.setForeground(QColor("#10b981"))
+                count_str = f"({op_info.valid_mappings_count})" if op_info.valid_mappings_count > 1 else ""
+                item = QListWidgetItem(f"{op_name} {count_str}".strip())
+            item.setData(Qt.ItemDataRole.UserRole, op_name)
             self.op_list.addItem(item)
 
         if self.op_list.count() > 0:
@@ -239,7 +239,7 @@ class CatalogWorkspace(QWidget):
             tmpl_item = QTableWidgetItem(m.template)
             self.tmpl_table.setItem(row, 1, tmpl_item)
 
-            param_str = ", ".join(f"{k}➔{v}" for k, v in m.parameters.items()) or "(keine)"
+            param_str = ", ".join(f"{k} -> {v}" for k, v in m.parameters.items()) or "(keine)"
             self.tmpl_table.setItem(row, 2, QTableWidgetItem(param_str))
 
             # Impact
