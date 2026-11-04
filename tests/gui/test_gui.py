@@ -119,6 +119,54 @@ class GuiValidationAndConflictTests(unittest.TestCase):
         self.assertEqual(state.profile_config.specs_dir, 'examples/service_pilot/inputs/specs')
         self.assertEqual(state.mapping_file.name, 'mapping.toml')
 
+    def test_multi_mapping_files_save_preserves_origin_files(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            file_a = Path(tmpdir) / "mappings_a.toml"
+            file_b = Path(tmpdir) / "mappings_b.toml"
+
+            map_a = [{
+                "id": "MAP_A",
+                "template": "Aktion A {dauer}",
+                "operation": "wait",
+                "parameters": {"dauer": "seconds"}
+            }]
+            map_b = [{
+                "id": "MAP_B",
+                "template": "Aktion B {dauer}",
+                "operation": "wait",
+                "parameters": {"dauer": "seconds"}
+            }]
+            save_mapping_file(file_a, map_a)
+            save_mapping_file(file_b, map_b)
+
+            prof = ProjectProfile(
+                id="multi_test",
+                name="Multi Test",
+                registry_target="operations.registry:REGISTRY",
+                mapping_files=[str(file_a), str(file_b)],
+                resources_file="inputs/resources.json",
+                specs_dir="inputs",
+            )
+            state = MappingStudioState(project_profile=prof)
+            self.assertEqual(len(state.mappings), 2)
+
+            # Trigger save
+            ok, msg = state.save_all_mapping_files()
+            self.assertTrue(ok, msg)
+
+            # Re-read raw files from disk
+            raw_a, err_a = load_mapping_file(file_a)
+            raw_b, err_b = load_mapping_file(file_b)
+            self.assertIsNone(err_a)
+            self.assertIsNone(err_b)
+
+            # Verify File A has ONLY 1 mapping and File B has ONLY 1 mapping (no pollution!)
+            self.assertEqual(len(raw_a), 1)
+            self.assertEqual(raw_a[0]["id"], "MAP_A")
+
+            self.assertEqual(len(raw_b), 1)
+            self.assertEqual(raw_b[0]["id"], "MAP_B")
+
 
 class GuiFacadeAndInspectionTests(unittest.TestCase):
 
@@ -352,3 +400,102 @@ class GuiWindowWorkspacesIntegrationTests(unittest.TestCase):
         specs.jump_to_linked_line()
         current_cursor_line = specs.editor.textCursor().blockNumber() + 1
         self.assertEqual(current_cursor_line, 6)
+
+    def test_step_assistant_phase_awareness_and_insertion(self):
+        win = MappingStudioWindow()
+        specs = win.workspace_specs
+        assistant = specs.step_assistant
+
+        # 1. Action phase
+        assistant.set_phase("ACTION")
+        self.assertEqual(assistant.current_phase, "ACTION")
+        action_ops = [assistant.combo_ops.itemData(i) for i in range(assistant.combo_ops.count())]
+        self.assertIn("wait", action_ops)
+        self.assertIn("set_battery_voltage", action_ops)
+        # Check operations like expect_fault_memory_entry should NOT be in Action
+        self.assertNotIn("expect_fault_memory_entry", action_ops)
+
+        # 2. Expected Result phase
+        assistant.set_phase("EXPECTED_RESULT")
+        self.assertEqual(assistant.current_phase, "EXPECTED_RESULT")
+        check_ops = [assistant.combo_ops.itemData(i) for i in range(assistant.combo_ops.count())]
+        self.assertIn("expect_fault_memory_entry", check_ops)
+        self.assertNotIn("set_battery_voltage", check_ops)
+
+        # 3. Parameter form and insertion
+        specs.editor.setPlainText("# Test\n## Expected Result\n")
+        specs.editor.moveCursor(specs.editor.textCursor().MoveOperation.End)
+
+        idx = assistant.combo_ops.findData("expect_fault_memory_entry")
+        assistant.combo_ops.setCurrentIndex(idx)
+        assistant.on_operation_changed()
+
+        # Check preview sentence and auto-verification
+        preview_text = assistant.txt_preview.text()
+        self.assertIn("Fehlerspeichereintrag", preview_text)
+        self.assertIn("Gültig", assistant.lbl_verify.text())
+
+        assistant.on_insert_clicked()
+        self.assertIn(preview_text, specs.editor.toPlainText())
+
+    def test_background_analysis_revision_tracking(self):
+        win = MappingStudioWindow()
+        specs = win.workspace_specs
+        mgr = specs.analysis_manager
+
+        initial_rev = mgr.current_doc_revision
+
+        # Schedule revision
+        rev1 = mgr.schedule_doc_analysis(
+            text="# Test\n## Action\n10. Warte 1 s",
+            source_name="test_rev.md",
+            registry=win.state.registry,
+            mapping_dicts=win.state.get_mappings_dicts(),
+            profile=win.state.profile,
+        )
+        self.assertEqual(rev1, initial_rev + 1)
+
+        # Wait for thread pool to finish
+        mgr.thread_pool.waitForDone(2000)
+        self.app.processEvents()
+
+        # Check status updated
+        self.assertIn("Aktuell geprüft", specs.lbl_analysis_status.text())
+
+        # Test stale result protection: If an older result arrives for a superseded revision
+        older_res = CompilationFacade.compile_text(
+            text="# Stale\n## Action\n10. Warte 2 s",
+            source_name="stale.md",
+            registry=win.state.registry,
+            mapping_dicts=win.state.get_mappings_dicts(),
+            profile=win.state.profile,
+        )
+        # Emit with obsolete revision (rev1 - 1)
+        specs.on_doc_analysis_finished(older_res, revision=rev1 - 1)
+        self.assertIn("Ergebnis veraltet", specs.lbl_analysis_status.text())
+
+    def test_multi_tier_problem_list_filtering(self):
+        win = MappingStudioWindow()
+        specs = win.workspace_specs
+
+        # Create a document with an error
+        broken_spec = """# Broken
+## Action
+10. Unbekannter Befehl ohne Mapping 123
+"""
+        specs.editor.setPlainText(broken_spec)
+        specs.compile_current_text(sync=True)
+
+        # Verify problems recorded
+        self.assertTrue(len(specs.all_problems) > 0)
+        doc_probs = [p for p in specs.all_problems if p.level == "Dokument"]
+        self.assertTrue(len(doc_probs) > 0)
+
+        # Filter by Dokument
+        specs.set_problem_filter("Dokument")
+        self.assertEqual(specs.error_table.rowCount(), len(doc_probs))
+
+        # Filter by Projekt
+        specs.set_problem_filter("Projekt")
+        proj_count = sum(1 for p in specs.all_problems if p.level == "Projekt")
+        self.assertEqual(specs.error_table.rowCount(), proj_count)

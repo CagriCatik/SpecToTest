@@ -32,31 +32,7 @@ from tcg.gui.dialog_editor import MappingEditorDialog
 from tcg.gui.facade import CompilationFacade
 from tcg.gui.models import MappingItem, MappingStudioState, OperationInfo
 from tcg.gui.view_mappings import MappingsView
-
-
-class SmartParamWidget:
-    """Helper holding input widgets and reading values for a parameter placeholder."""
-
-    def __init__(self, val_widget: QWidget, unit_widget: QComboBox | None = None):
-        self.val_widget = val_widget
-        self.unit_widget = unit_widget
-        self.spinbox = val_widget  # convenient alias for test access
-        self.unit_combo = unit_widget
-
-    def get_value_string(self) -> str:
-        if isinstance(self.val_widget, QDoubleSpinBox):
-            val = self.val_widget.value()
-            return str(int(val)) if val.is_integer() else str(val)
-        elif isinstance(self.val_widget, QComboBox):
-            return str(self.val_widget.currentData() or self.val_widget.currentText())
-        elif isinstance(self.val_widget, QLineEdit):
-            return self.val_widget.text().strip()
-        return ""
-
-    def get_unit_string(self) -> str:
-        if self.unit_widget and isinstance(self.unit_widget, QComboBox):
-            return str(self.unit_widget.currentData() or "")
-        return ""
+from tcg.gui.widget_smart_param import SmartParamWidget, build_smart_param_widget
 
 
 class CatalogWorkspace(QWidget):
@@ -185,8 +161,8 @@ class CatalogWorkspace(QWidget):
 
         right_splitter.addWidget(mid_group)
 
-        # 3. Bottom Section: Vice-Versa Parameter Form & Sentence Generator
-        bottom_group = QGroupBox("Satz-Generator & Einfüge-Assistent (Vice Versa: Operation ➔ Spezifikationsschritt)")
+        # 3. Bottom Section: Satzprüfung & Testschritt-Generator
+        bottom_group = QGroupBox("Satzprüfung & Testschritt-Generator (Operation ➔ Schritt)")
         bottom_layout = QVBoxLayout(bottom_group)
         bottom_layout.setSpacing(8)
 
@@ -412,63 +388,13 @@ class CatalogWorkspace(QWidget):
 
     def create_smart_input_for_param(self, param_spec, ph_name: str) -> SmartParamWidget:
         """Create field suited to the parameter type (Quantity, Boolean, Resource, Decimal)."""
-        if not param_spec:
-            line_edit = QLineEdit("10")
-            line_edit.textChanged.connect(self.update_generated_sentence_preview)
-            return SmartParamWidget(line_edit, None)
-
-        t = param_spec.type
-        type_name = type(t).__name__
-
-        # 1. Quantity with unit (voltage, time, can_signal)
-        if hasattr(t, 'unit') and t.unit:
-            spinbox = QDoubleSpinBox()
-            spinbox.setRange(0, 1000000)
-            spinbox.setDecimals(2)
-
-            unit_combo = QComboBox()
-            units = [factor[0] for factor in getattr(t, 'factors', ())]
-            if not units and t.unit:
-                units = [t.unit]
-            for u in units:
-                unit_combo.addItem(u if u else "(keine Einheit)", u)
-
-            # Heuristics for default values
-            if t.dimension == 'voltage':
-                spinbox.setValue(12)
-            elif t.dimension == 'time':
-                spinbox.setValue(500 if "ms" in units else 1)
-                if "ms" in units:
-                    unit_combo.setCurrentText("ms")
-            else:
-                spinbox.setValue(10)
-
-            spinbox.valueChanged.connect(self.update_generated_sentence_preview)
-            unit_combo.currentIndexChanged.connect(self.update_generated_sentence_preview)
-            return SmartParamWidget(spinbox, unit_combo)
-
-        # 2. Boolean ('an' / 'aus', 'aktiv' / 'inaktiv')
-        if hasattr(t, 'true_value') and hasattr(t, 'false_value'):
-            combo = QComboBox()
-            combo.addItem(t.true_value, t.true_value)
-            combo.addItem(t.false_value, t.false_value)
-            combo.currentIndexChanged.connect(self.update_generated_sentence_preview)
-            return SmartParamWidget(combo, None)
-
-        # 3. Resource profile values (controller, diagnostic_code, signal, screen)
-        if hasattr(t, 'kind') and t.kind:
-            res_list = self.state.profile.resources.get(t.kind, [])
-            if res_list:
-                combo = QComboBox()
-                for r in res_list:
-                    combo.addItem(r, r)
-                combo.currentIndexChanged.connect(self.update_generated_sentence_preview)
-                return SmartParamWidget(combo, None)
-
-        # Default string/decimal input
-        line_edit = QLineEdit("10" if "value" in ph_name or "wert" in ph_name else "default")
-        line_edit.textChanged.connect(self.update_generated_sentence_preview)
-        return SmartParamWidget(line_edit, None)
+        resources = self.state.profile.resources if self.state.profile else {}
+        return build_smart_param_widget(
+            param_spec=param_spec,
+            ph_name=ph_name,
+            profile_resources=resources,
+            on_change=self.update_generated_sentence_preview,
+        )
 
     def update_generated_sentence_preview(self):
         """Assemble the complete sentence from current parameter inputs."""

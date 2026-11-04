@@ -329,12 +329,19 @@ class MappingStudioState:
         return [m.to_dict() for m in self.mappings]
 
     def add_mapping(self, item: MappingItem) -> None:
+        if not item.source_file:
+            if self.mapping_file:
+                item.source_file = str(self.mapping_file)
+            elif self.profile_config and self.profile_config.mapping_files:
+                item.source_file = self.profile_config.mapping_files[0]
         self.mappings.append(item)
         self.is_dirty = True
         self.recalculate()
 
     def update_mapping(self, index: int, item: MappingItem) -> None:
         if 0 <= index < len(self.mappings):
+            if not item.source_file and self.mappings[index].source_file:
+                item.source_file = self.mappings[index].source_file
             self.mappings[index] = item
             self.is_dirty = True
             self.recalculate()
@@ -344,6 +351,53 @@ class MappingStudioState:
             self.mappings.pop(index)
             self.is_dirty = True
             self.recalculate()
+
+    def save_all_mapping_files(self) -> tuple[bool, str]:
+        """Save all mappings back to their respective source files.
+        
+        Preserves the source_file origin of each mapping so multi-file profiles
+        are cleanly separated without duplicating mappings across files.
+        """
+        from tcg.gui.toml_io import save_mapping_file
+
+        target_paths: list[Path] = []
+        if self.profile_config and self.profile_config.mapping_files:
+            target_paths = [Path(f) for f in self.profile_config.mapping_files]
+        elif self.mapping_file:
+            target_paths = [Path(self.mapping_file)]
+
+        if not target_paths:
+            return False, "Keine Zieldatei zum Speichern definiert."
+
+        primary_file = target_paths[0]
+        resolved_targets: dict[Path, Path] = {p.resolve(): p for p in target_paths}
+        grouped: dict[Path, list[dict[str, Any]]] = {p.resolve(): [] for p in target_paths}
+
+        for item in self.mappings:
+            d = item.to_dict()
+            d.pop('_source_file', None)
+            if item.source_file:
+                item_p = Path(item.source_file).resolve()
+            else:
+                item_p = primary_file.resolve()
+
+            if item_p not in grouped:
+                grouped[item_p] = []
+                resolved_targets[item_p] = Path(item.source_file)
+
+            grouped[item_p].append(d)
+
+        saved_files: list[str] = []
+        for res_path, entries in grouped.items():
+            file_path = resolved_targets[res_path]
+            success, msg = save_mapping_file(file_path, entries)
+            if not success:
+                return False, f"Fehler beim Speichern von '{file_path.name}': {msg}"
+            saved_files.append(file_path.name)
+
+        self.is_dirty = False
+        names_str = ", ".join(f"'{name}'" for name in saved_files)
+        return True, f"Erfolgreich {len(self.mappings)} Mappings in {len(saved_files)} Datei(en) ({names_str}) gespeichert."
 
     def test_sentence(self, sentence: str, phase: str | None = None) -> dict[str, Any]:
         """Test a natural language sentence against current valid mappings.

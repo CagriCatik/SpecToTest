@@ -311,16 +311,11 @@ class MappingStudioWindow(QMainWindow):
             self.status_bar.showMessage(f"Geladen: {path}", 5000)
 
     def action_save_file(self):
-        if not self.state.mapping_file:
-            self.action_save_file_as()
-            return
-
-        success, msg = save_mapping_file(self.state.mapping_file, self.state.get_mappings_dicts())
+        success, msg = self.state.save_all_mapping_files()
         if success:
-            self.state.is_dirty = False
             self.on_state_changed()
             # Non-blocking status bar confirmation as requested by the reviewer
-            self.status_bar.showMessage(f"Gespeichert: {len(self.state.mappings)} Mappings in '{self.state.mapping_file.name}'", 5000)
+            self.status_bar.showMessage(msg, 5000)
         else:
             QMessageBox.critical(self, "Fehler beim Speichern", msg)
 
@@ -332,7 +327,10 @@ class MappingStudioWindow(QMainWindow):
         if path:
             if not path.endswith('.toml'):
                 path += '.toml'
-            self.state.mapping_file = Path(path)
+            p = Path(path)
+            self.state.mapping_file = p
+            for m in self.state.mappings:
+                m.source_file = str(p)
             self.action_save_file()
 
     def closeEvent(self, event):
