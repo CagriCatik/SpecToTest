@@ -59,6 +59,92 @@ def _strip_inline_comment(line):
     return line
 
 
+def _process_line_comments(line: str, in_block: bool, in_html: bool) -> tuple[str, bool, bool, str | None]:
+    """Processes comments on a single line respecting string literals.
+
+    Returns:
+        tuple[str, bool, bool, str | None]:
+            - stripped code line
+            - updated in_block status
+            - updated in_html status
+            - unclosed comment token if opened on this line ('/*' or '<!--'), else None
+    """
+    if in_block:
+        if '*/' in line:
+            in_block = False
+            line = line.partition('*/')[2]
+        else:
+            return '', True, False, None
+
+    if in_html:
+        if '-->' in line:
+            in_html = False
+            line = line.partition('-->')[2]
+        else:
+            return '', False, True, None
+
+    res = []
+    in_quote = False
+    quote_char = None
+    i = 0
+    n = len(line)
+    opened = None
+
+    while i < n:
+        c = line[i]
+        if c in ('"', "'"):
+            if not in_quote:
+                in_quote = True
+                quote_char = c
+            elif quote_char == c:
+                in_quote = False
+                quote_char = None
+            res.append(c)
+            i += 1
+            continue
+
+        if not in_quote:
+            if line[i:i+2] == '/*':
+                end_idx = line.find('*/', i + 2)
+                if end_idx != -1:
+                    i = end_idx + 2
+                    continue
+                else:
+                    in_block = True
+                    opened = '/*'
+                    break
+
+            if line[i:i+4] == '<!--':
+                end_idx = line.find('-->', i + 4)
+                if end_idx != -1:
+                    i = end_idx + 4
+                    continue
+                else:
+                    in_html = True
+                    opened = '<!--'
+                    break
+
+            if line[i:i+2] == '//':
+                break
+
+            if c == '#':
+                # Check if this line is a markdown heading (# Precondition, # TESTFALL:, etc.)
+                stripped_rest = line[i:].lstrip('#').strip()
+                match_hdr = re.match(r'^\*{0,2}(TESTFALL|NAME|TESTZIEL)\*{0,2}:', stripped_rest, re.IGNORECASE)
+                is_heading = bool(match_hdr) or bool(SECTION_HEADING.match(stripped_rest))
+                if (i == 0 or not ''.join(res).strip('#').strip()) and is_heading:
+                    res.append(c)
+                    i += 1
+                    continue
+                else:
+                    break
+
+        res.append(c)
+        i += 1
+
+    return ''.join(res).strip(), in_block, in_html, opened
+
+
 def _parse_items(raw_items, path, line_number):
     items = []
     for part in raw_items.split(','):
@@ -124,6 +210,8 @@ def parse_text_lines(raw_lines, source_name='test_spec.txt'):
     sequence = {'Vorbedingungen': 0, 'Nachbedingungen': 0}
     in_block_comment = False
     in_html_comment = False
+    block_comment_start_line = None
+    html_comment_start_line = None
 
     def add_metadata():
         if case and not case['stored']:
@@ -158,35 +246,17 @@ def parse_text_lines(raw_lines, source_name='test_spec.txt'):
     for line_number, raw in enumerate(raw_lines, 1):
         line = raw.strip()
 
-        # Handle multi-line block comments /* ... */
-        if in_block_comment:
-            if '*/' in line:
-                in_block_comment = False
-                line = line.partition('*/')[2].strip()
-            else:
-                continue
+        # Handle block and line comments
+        line, in_block_comment, in_html_comment, opened_comment = _process_line_comments(
+            line, in_block_comment, in_html_comment
+        )
+        if opened_comment == '/*':
+            block_comment_start_line = line_number
+        elif opened_comment == '<!--':
+            html_comment_start_line = line_number
 
-        if line.startswith('/*'):
-            if '*/' in line:
-                line = line.partition('*/')[2].strip()
-            else:
-                in_block_comment = True
-                continue
-
-        # Handle multi-line HTML comments <!-- ... --> (Markdown)
-        if in_html_comment:
-            if '-->' in line:
-                in_html_comment = False
-                line = line.partition('-->')[2].strip()
-            else:
-                continue
-
-        if line.startswith('<!--'):
-            if '-->' in line:
-                line = line.partition('-->')[2].strip()
-            else:
-                in_html_comment = True
-                continue
+        if not line:
+            continue
 
         # Skip markdown code fence markers and thematic breaks
         if line.startswith('```') or line in ('---', '***', '___'):
@@ -205,11 +275,6 @@ def parse_text_lines(raw_lines, source_name='test_spec.txt'):
             elif SECTION_HEADING.match(candidate):
                 line = candidate
                 is_md_heading = True
-
-        if not is_md_heading:
-            line = _strip_inline_comment(line)
-            if not line or line.startswith('//'):
-                continue
 
         # Handle Markdown list bullets: - or *
         if line.startswith(('- ', '* ')):
@@ -325,6 +390,11 @@ def parse_text_lines(raw_lines, source_name='test_spec.txt'):
             continue
 
         _error(source_file, line_number, f'unrecognized specification statement: {line!r}')
+
+    if in_block_comment:
+        _error(source_file, block_comment_start_line or (len(raw_lines) or 1), "unclosed block comment '/*'")
+    if in_html_comment:
+        _error(source_file, html_comment_start_line or (len(raw_lines) or 1), "unclosed HTML comment '<!--'")
 
     if case is None and not sections['Testfaelle']:
         raise SpecError(f'{source_file}: no test cases')

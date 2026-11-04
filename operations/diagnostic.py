@@ -32,6 +32,8 @@ def expect_fault_memory_entry(bench, *, code: str, ecu: str = 'BCM1'):
         entries = bench.read_fault_memory(ecu)
     if code not in entries:
         raise CheckFailed(f'Fehlerspeicher {ecu}: Fehlercode {code!r} nicht gefunden (aktuelle Einträge: {entries})')
+    if hasattr(bench, '_log'):
+        bench._log('expect_fault_memory_entry', code=code, ecu=ecu, status='FOUND', verdict='PASS')
 
 
 def expect_fault_memory_empty(bench, *, ecu: str):
@@ -39,6 +41,8 @@ def expect_fault_memory_empty(bench, *, ecu: str):
     entries = bench.read_fault_memory(ecu)
     if entries:
         raise CheckFailed(f'Fehlerspeicher {ecu} ist nicht leer: {entries}')
+    if hasattr(bench, '_log'):
+        bench._log('expect_fault_memory_empty', ecu=ecu, status='EMPTY', verdict='PASS')
 
 
 def expect_diagnostic(bench, *, controller: str, code: str, active: bool):
@@ -46,6 +50,8 @@ def expect_diagnostic(bench, *, controller: str, code: str, active: bool):
     actual = bench.diagnostic_active(controller, code)
     if actual is not active:
         raise CheckFailed(f'Diagnose {controller}/{code}: erwartet {active}, aktuell {actual}')
+    if hasattr(bench, '_log'):
+        bench._log('expect_diagnostic', controller=controller, code=code, expected=str(active), actual=str(actual), verdict='PASS')
 
 
 def expect_diagnostic_within(bench, *, controller: str, code: str, active: bool, timeout, interval):
@@ -57,6 +63,8 @@ def expect_diagnostic_within(bench, *, controller: str, code: str, active: bool,
         if observed_at > deadline:
             raise CheckFailed(f'Diagnose {controller}/{code} observation completed after timeout {timeout} s at {observed_at} s')
         if actual is active:
+            if hasattr(bench, '_log'):
+                bench._log('expect_diagnostic_within', controller=controller, code=code, expected=str(active), actual=str(actual), verdict='PASS')
             return
         if observed_at >= deadline:
             raise CheckFailed(f'Diagnose {controller}/{code} wurde nicht innerhalb von {timeout}s {active}')

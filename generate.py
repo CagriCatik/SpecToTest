@@ -59,12 +59,7 @@ def generate(spec, mapping, resources, output, registry, runner_module='tcg.runt
 
 
 def derive_output_filename(spec_file: Path) -> str:
-    name = spec_file.stem
-    if name.startswith('tc_'):
-        parts = name.split('_')
-        num = parts[1]
-        return f'test_tc{num}.py'
-    return f'test_{name}.py'
+    return f'test_{spec_file.stem}.py'
 
 
 def generate_batch(spec_dir: Path, mapping, resources, output_dir: Path, registry,
@@ -82,16 +77,16 @@ def generate_batch(spec_dir: Path, mapping, resources, output_dir: Path, registr
         if len(rel_parts) > 1 and rel_parts[0] in ('md', 'txt'):
             continue
         rel_dir = f.relative_to(spec_dir).parent
-        key = f.stem
-        # Prefer categorized subdirectories over root, and prefer .md over .txt
+        key = (rel_dir, f.stem)
+        # Prefer categorized subdirectories over root, and prefer .md over .txt within same directory
         if key in unique_specs:
-            existing_rel_dir, existing_path = unique_specs[key]
-            if existing_rel_dir == Path('.') and rel_dir != Path('.'):
-                unique_specs[key] = (rel_dir, f)
-            elif existing_rel_dir == rel_dir and f.suffix.lower() == '.md':
-                unique_specs[key] = (rel_dir, f)
+            existing_path = unique_specs[key]
+            if f.suffix.lower() == '.md' and existing_path.suffix.lower() == '.txt':
+                unique_specs[key] = f
+            elif f.suffix.lower() == existing_path.suffix.lower():
+                raise SpecError(f"Duplicate specification file in '{rel_dir}': '{f.name}' conflicts with '{existing_path.name}'")
         else:
-            unique_specs[key] = (rel_dir, f)
+            unique_specs[key] = f
 
     created_logger = False
     log_file_path = None
@@ -103,19 +98,29 @@ def generate_batch(spec_dir: Path, mapping, resources, output_dir: Path, registr
         log_batch_header(logger, spec_dir, len(unique_specs), output_dir)
 
     compiled_cases = []
+    case_sources = {}
+    target_sources = {}
     total_steps = 0
-    for stem, (rel_dir, spec_path) in sorted(unique_specs.items(), key=lambda x: str(x[1][1])):
+
+    for (rel_dir, stem), spec_path in sorted(unique_specs.items(), key=lambda x: str(x[1])):
         out_filename = derive_output_filename(spec_path)
         out_file = output_dir / rel_dir / out_filename
+        if out_file in target_sources:
+            raise SpecError(
+                f"Output target collision for '{out_file}': targeted by both '{spec_path}' and '{target_sources[out_file]}'"
+            )
+        target_sources[out_file] = spec_path
         if logger:
             log_spec_file_start(logger, spec_path, str(rel_dir))
         cases = generate(spec_path, mapping, resources, out_file, registry, runner_module, logger=logger)
-        compiled_cases.extend(cases)
         for c in cases:
+            if c.id in case_sources:
+                raise SpecError(
+                    f"Duplicate Test_ID {c.id!r} in '{spec_path}'; already defined in '{case_sources[c.id]}'"
+                )
+            case_sources[c.id] = spec_path
             total_steps += len(list(c.all_steps()))
-        if rel_dir != Path('.'):
-            flat_file = output_dir / out_filename
-            flat_file.write_text(out_file.read_text(encoding='utf-8'), encoding='utf-8')
+        compiled_cases.extend(cases)
         print(f"Generated {len(cases)} test case(s): {', '.join(c.id for c in cases)} -> {out_file}")
 
     duration = time.perf_counter() - start_time

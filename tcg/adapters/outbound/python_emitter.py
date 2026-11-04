@@ -187,13 +187,14 @@ def _format_spec_docstring(case):
 
 def _module_alias(module_name, used_aliases):
     short = module_name.split('.')[-1]
-    if short not in used_aliases and short.isidentifier():
-        used_aliases.add(short)
-        return short
+    alias = f'_op_{short}'
+    if alias not in used_aliases and alias.isidentifier():
+        used_aliases.add(alias)
+        return alias
     idx = 2
-    while f'{short}_{idx}' in used_aliases:
+    while f'{alias}_{idx}' in used_aliases:
         idx += 1
-    alias = f'{short}_{idx}'
+    alias = f'{alias}_{idx}'
     used_aliases.add(alias)
     return alias
 

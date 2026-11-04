@@ -91,8 +91,8 @@ class ControlFlowAndCanIntegrationTests(BaseTestCase):
 
         source = render_python(cases, REGISTRY, RUNNER)
         ast.parse(source)
-        self.assertIn('import operations.can as can', source)
-        self.assertIn("can.set_can_signal(bench, signal='EngineSpeed', value=Decimal('2500'))", source)
+        self.assertIn('import operations.can as _op_can', source)
+        self.assertIn("_op_can.set_can_signal(bench, signal='EngineSpeed', value=Decimal('2500'))", source)
 
         ns = {'__name__': 'generated_test'}
         exec(compile(source, 'generated_test.py', 'exec'), ns)

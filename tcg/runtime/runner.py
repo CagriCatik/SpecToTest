@@ -37,25 +37,40 @@ def execute(run, bench):
         if hasattr(failure.log, 'specification') and not failure.log.specification:
             failure.log.specification = spec_doc
         return failure.log
-    except CheckFailed as failure:
+    except BaseException as error:
         duration = time.perf_counter() - start_time
         records = list(getattr(bench, 'log_entries', []))
         test_id = getattr(run, 'test_id', getattr(run, '__name__', 'TEST'))
-        return TestResult(test_id=test_id, result='FAIL', error=failure, duration=duration, records=records, specification=spec_doc)
-    except Exception as error:
-        duration = time.perf_counter() - start_time
-        records = list(getattr(bench, 'log_entries', []))
-        test_id = getattr(run, 'test_id', getattr(run, '__name__', 'TEST'))
-        primary_err = error
+
+        primary_err = None
         cleanup_errs = []
-        if isinstance(error, ExceptionGroup) and error.message == "Multiple errors during cleanup":
-            cleanup_errs = list(error.exceptions)
+
+        if isinstance(error, ExceptionGroup):
+            if error.message == "Multiple errors during cleanup":
+                cleanup_errs = list(error.exceptions)
+                primary_err = error.__context__
+            else:
+                primary_err = error
+        else:
             if error.__context__ is not None:
                 primary_err = error.__context__
-        elif error.__context__ is not None:
-            primary_err = error.__context__
-            cleanup_errs = [error]
-        return TestResult(test_id=test_id, result='ERROR', error=primary_err, cleanup_errors=cleanup_errs,
+                cleanup_errs = [error]
+            else:
+                primary_err = error
+
+        all_errors = ([primary_err] if primary_err else []) + cleanup_errs
+        has_technical = any(not isinstance(e, CheckFailed) for e in all_errors)
+        has_check_fail = any(isinstance(e, CheckFailed) for e in all_errors)
+
+        if has_technical:
+            res_status = 'ERROR'
+        elif has_check_fail:
+            res_status = 'FAIL'
+        else:
+            res_status = 'PASS'
+
+        main_err = primary_err if primary_err is not None else (cleanup_errs[0] if cleanup_errs else error)
+        return TestResult(test_id=test_id, result=res_status, error=main_err, cleanup_errors=cleanup_errs,
                           duration=duration, records=records, specification=spec_doc)
 
 
@@ -138,8 +153,7 @@ def run_main(*pos_args, argv=None, bench_factory=None):
         return 3
 
     factory = bench_factory if bench_factory is not None else get_bench_factory(args.bench_type)
-    sample_bench = factory(config)
-    bench_label = getattr(sample_bench, 'BENCH_NAME', f'{args.bench_type} (Simulation)')
+    bench_label = getattr(factory, 'BENCH_NAME', getattr(factory, '__name__', f'{args.bench_type} (Simulation)'))
 
     ids = (args.test_id,) if args.test_id else tuple(runners)
     logs = [execute(runners[test_id], factory(config)) for test_id in ids]

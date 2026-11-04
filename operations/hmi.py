@@ -12,6 +12,8 @@ def expect_screen_text(bench, *, text: str):
     actual = bench.screen_text()
     if actual != text:
         raise CheckFailed(f'Anzeigetext: erwartet {text!r}, aktuell {actual!r}')
+    if hasattr(bench, '_log'):
+        bench._log('expect_screen_text', expected=text, actual=actual, verdict='PASS')
 
 
 def write_parameter(bench, *, parameter: str, value):
@@ -24,4 +26,6 @@ def expect_parameter(bench, *, parameter: str, value):
     actual = bench.read_parameter(parameter)
     if actual != value:
         raise CheckFailed(f'Parameter {parameter}: erwartet {value}, aktuell {actual}')
+    if hasattr(bench, '_log'):
+        bench._log('expect_parameter', parameter=parameter, expected=str(value), actual=str(actual), verdict='PASS')
 

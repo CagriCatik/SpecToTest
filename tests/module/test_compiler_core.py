@@ -64,7 +64,8 @@ class CompilerCoreModuleTests(BaseTestCase):
             exec(compile(output.read_text(encoding='utf-8'), str(output), 'exec'), ns)
             code = run_main(ns['RUNNERS'], argv=['--test-id', 'TC_01_UNDERVOLTAGE_RECOVERY'], bench_factory=my_bench_factory)
             self.assertEqual(code, 0)
-            self.assertEqual(len(custom_instantiated), 2)
+            # Exactly 1 bench instance created for the test runner (no superfluous bench for name lookup)
+            self.assertEqual(len(custom_instantiated), 1)
 
 
 if __name__ == '__main__':

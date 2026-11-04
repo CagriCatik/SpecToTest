@@ -22,19 +22,25 @@ from tcg.runtime.execution_logger import (
     setup_execution_logger,
 )
 from tcg.runtime.html_report import generate_html_report
-from tcg.runtime.runner import execute, write_junit_xml
+from tcg.runtime.result import TestResult
+from tcg.runtime.runner import execute, get_bench_factory, write_junit_xml
 
 
 def discover_test_modules(suite_dir: Path) -> list[tuple[str, Path]]:
-    """Finds all generated test scripts (test_*.py) in the suite directory (including category subdirectories)."""
+    """Finds all generated test scripts (test_*.py) in the suite directory."""
     candidates = [p for p in sorted(suite_dir.rglob('test_*.py')) if '__pycache__' not in p.parts]
-    # Deduplicate by stem, preferring categorized (nested) paths over root if both exist
-    chosen_by_stem = {}
+    modules = []
+    seen_rel_paths = set()
     for p in candidates:
-        depth = len(p.relative_to(suite_dir).parts)
-        if p.stem not in chosen_by_stem or depth > chosen_by_stem[p.stem][0]:
-            chosen_by_stem[p.stem] = (depth, p)
-    return [(p.stem, p) for _, p in sorted(chosen_by_stem.values(), key=lambda item: str(item[1]))]
+        rel = p.relative_to(suite_dir)
+        # If an un-categorized root copy exists alongside categorized versions, skip the root copy
+        if len(rel.parts) == 1 and any(len(c.relative_to(suite_dir).parts) > 1 and c.name == p.name for c in candidates):
+            continue
+        rel_key = str(rel.with_suffix(''))
+        if rel_key not in seen_rel_paths:
+            seen_rel_paths.add(rel_key)
+            modules.append((p.stem, p))
+    return sorted(modules, key=lambda item: str(item[1]))
 
 
 def load_module_runners(module_path: Path) -> dict:
@@ -72,12 +78,8 @@ def main():
     profile = load_profile(Path(args.resources))
     bench_cfg = load_config(Path(args.bench_config), profile)
 
-    bench_factories = {
-        'dummy': ('Generic In-Memory Bench (DummyBench)', DummyBench),
-        'vector': ('Vector CANoe / CANalyzer (VectorDummyBench)', VectorDummyBench),
-        'controldesk': ('dSPACE ControlDesk HiL (ControlDeskDummyBench)', ControlDeskDummyBench),
-    }
-    bench_name, bench_cls = bench_factories[args.bench_type]
+    bench_cls = get_bench_factory(args.bench_type)
+    bench_name = getattr(bench_cls, 'BENCH_NAME', f'{args.bench_type} (Simulation)')
 
     # Discover tests
     test_files = discover_test_modules(suite_dir)
@@ -100,11 +102,25 @@ def main():
     start_total = time.perf_counter()
 
     for mod_name, file_path in test_files:
+        category = file_path.parent.name if file_path.parent != suite_dir else 'general'
         try:
             runners = load_module_runners(file_path)
+            if not runners:
+                raise ImportError(f"No test runners (RUNNERS dictionary) found in {file_path.name}")
         except Exception as err:
             exec_logger.error("Fehler beim Laden von %s: %s", file_path.name, err)
-            print(f"❌ Fehler beim Laden von {file_path.name}: {err}", file=sys.stderr)
+            err_log = TestResult(
+                test_id=file_path.stem.upper(),
+                result='ERROR',
+                error=err,
+                duration=0.0,
+                records=[],
+            )
+            err_log.category = category
+            all_logs.append(err_log)
+            log_test_case_result(exec_logger, err_log.test_id, err_log)
+            print(f" ⚠️ ERROR [{category:<11}] {file_path.name:<38} (Ladefehler)")
+            print(f"        └─ Error: {err}", file=sys.stderr)
             continue
 
         for test_id, runner in runners.items():

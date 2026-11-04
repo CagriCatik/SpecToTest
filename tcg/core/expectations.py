@@ -4,7 +4,7 @@ from tcg.core.model import SpecError
 
 RESERVED_VARIABLE_NAMES = frozenset({
     'bench', 'Decimal', 'runner', 'runners', 'TestResult', 'TestLog', 'CheckFailed',
-    'self', 'args', 'kwargs',
+    'self', 'args', 'kwargs', 'timing', 'diagnostic', 'ignition', 'supply', 'hmi', 'can', 'hil',
 } | set(keyword.kwlist))
 
 
@@ -75,6 +75,11 @@ def validate_expectations(expected_rows, action_index, precond_steps, cleanup_st
                 problems.append(
                     f'{source_file}:{line} [Erwartungen]: {test_id}: expectation for step {s_num} '
                     f'has no matching target in Action tree (orphaned expected result)'
+                )
+            elif action_index[s_num]['type'] == 'break':
+                problems.append(
+                    f'{source_file}:{line} [Erwartungen]: {test_id}: expectation for step {s_num} '
+                    f'references a BREAK statement; expected results may only target Action steps or loops'
                 )
     if problems:
         raise SpecError(problems)
