@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 from tcg.gui.dialog_editor import MappingEditorDialog
 from tcg.gui.facade import CompilationFacade
 from tcg.gui.models import MappingItem, MappingStudioState
+from tcg.gui.styles import get_monospace_font
 
 
 class MappingsView(QWidget):
@@ -124,8 +125,9 @@ class MappingsView(QWidget):
 
         inspector_layout.addWidget(QLabel("<b>Satzmuster:</b>"))
         self.insp_template_lbl = QLabel("-")
+        self.insp_template_lbl.setFont(get_monospace_font(9))
         self.insp_template_lbl.setWordWrap(True)
-        self.insp_template_lbl.setStyleSheet("background-color: rgba(128,128,128,0.1); padding: 8px; border-radius: 4px; font-family: monospace;")
+        self.insp_template_lbl.setStyleSheet("background-color: rgba(128,128,128,0.1); padding: 8px; border-radius: 4px;")
         inspector_layout.addWidget(self.insp_template_lbl)
 
         inspector_layout.addWidget(QLabel("<b>Ziel-Operation:</b>"))
@@ -138,8 +140,9 @@ class MappingsView(QWidget):
 
         inspector_layout.addWidget(QLabel("<b>Parameter-Bindings:</b>"))
         self.insp_bindings_lbl = QLabel("-")
+        self.insp_bindings_lbl.setFont(get_monospace_font(9))
         self.insp_bindings_lbl.setWordWrap(True)
-        self.insp_bindings_lbl.setStyleSheet("background-color: rgba(128,128,128,0.1); padding: 8px; border-radius: 4px; font-family: monospace;")
+        self.insp_bindings_lbl.setStyleSheet("background-color: rgba(128,128,128,0.1); padding: 8px; border-radius: 4px;")
         inspector_layout.addWidget(self.insp_bindings_lbl)
 
         # Impact Section
@@ -248,7 +251,7 @@ class MappingsView(QWidget):
 
             # 1. ID
             id_item = QTableWidgetItem(item.id)
-            id_item.setFont(QFont("Monospace", 9, QFont.Weight.Bold))
+            id_item.setFont(get_monospace_font(9, bold=True))
             self.table.setItem(row, 1, id_item)
 
             # 2. Template

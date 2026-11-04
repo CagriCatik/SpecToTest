@@ -33,6 +33,7 @@ from PySide6.QtWidgets import (
 from tcg.gui.analysis_worker import BackgroundAnalysisManager, InspectionProblem
 from tcg.gui.facade import CompilationError, CompilationFacade, CompilationResult, StepInspectionInfo
 from tcg.gui.models import MappingStudioState
+from tcg.gui.styles import get_monospace_font
 from tcg.gui.syntax import SpecSyntaxHighlighter
 from tcg.gui.widget_smart_param import SmartParamWidget, build_smart_param_widget
 
@@ -163,7 +164,7 @@ class StepAssistantWidget(QWidget):
         # 5. Live Sentence Preview & Auto-Verification
         layout.addWidget(QLabel("<b>Erzeugter Satz:</b>"))
         self.txt_preview = QLineEdit()
-        self.txt_preview.setFont(QFont("Monospace", 9, QFont.Weight.Bold))
+        self.txt_preview.setFont(get_monospace_font(9, bold=True))
         self.txt_preview.textChanged.connect(self.verify_preview_sentence)
         layout.addWidget(self.txt_preview)
 
@@ -285,7 +286,7 @@ class StepAssistantWidget(QWidget):
             row_layout.setSpacing(6)
 
             lbl = QLabel(f"{{{ph}}}:")
-            lbl.setFont(QFont("Monospace", 9, QFont.Weight.Bold))
+            lbl.setFont(get_monospace_font(9, bold=True))
             lbl.setMinimumWidth(80)
             row_layout.addWidget(lbl)
 
@@ -431,7 +432,7 @@ class SpecificationWorkspace(QWidget):
         edit_splitter = QSplitter(Qt.Orientation.Vertical)
 
         self.editor = SpecCodeEditor()
-        self.editor.setFont(QFont("Monospace", 10))
+        self.editor.setFont(get_monospace_font(10))
         self.editor.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
         self.highlighter = SpecSyntaxHighlighter(self.editor.document(), dark_theme=True)
         self.editor.cursorPositionChanged.connect(self.on_cursor_position_changed)
@@ -514,8 +515,9 @@ class SpecificationWorkspace(QWidget):
 
         step_layout.addWidget(QLabel("<b>Zugeordnetes Satzmuster:</b>"))
         self.insp_map_lbl = QLabel("-")
+        self.insp_map_lbl.setFont(get_monospace_font(9))
         self.insp_map_lbl.setWordWrap(True)
-        self.insp_map_lbl.setStyleSheet("background-color: rgba(128,128,128,0.1); padding: 6px; border-radius: 4px; font-family: monospace;")
+        self.insp_map_lbl.setStyleSheet("background-color: rgba(128,128,128,0.1); padding: 6px; border-radius: 4px;")
         step_layout.addWidget(self.insp_map_lbl)
 
         step_layout.addWidget(QLabel("<b>Aufgerufene Operation:</b>"))
@@ -530,8 +532,9 @@ class SpecificationWorkspace(QWidget):
 
         step_layout.addWidget(QLabel("<b>Extrahierte & normalisierte Parameter:</b>"))
         self.insp_params_lbl = QLabel("-")
+        self.insp_params_lbl.setFont(get_monospace_font(9))
         self.insp_params_lbl.setWordWrap(True)
-        self.insp_params_lbl.setStyleSheet("background-color: rgba(128,128,128,0.1); padding: 6px; border-radius: 4px; font-family: monospace;")
+        self.insp_params_lbl.setStyleSheet("background-color: rgba(128,128,128,0.1); padding: 6px; border-radius: 4px;")
         step_layout.addWidget(self.insp_params_lbl)
 
         # Action <-> Expectation Link
@@ -549,7 +552,7 @@ class SpecificationWorkspace(QWidget):
         step_layout.addWidget(QLabel("<b>Erzeugter Python-Aufruf:</b>"))
         self.insp_call_code = QTextEdit()
         self.insp_call_code.setReadOnly(True)
-        self.insp_call_code.setFont(QFont("Monospace", 9))
+        self.insp_call_code.setFont(get_monospace_font(9))
         self.insp_call_code.setMaximumHeight(80)
         step_layout.addWidget(self.insp_call_code)
 
@@ -572,7 +575,7 @@ class SpecificationWorkspace(QWidget):
 
         self.code_view = QTextEdit()
         self.code_view.setReadOnly(True)
-        self.code_view.setFont(QFont("Monospace", 9))
+        self.code_view.setFont(get_monospace_font(9))
         self.code_view.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
         code_layout.addWidget(self.code_view)
 

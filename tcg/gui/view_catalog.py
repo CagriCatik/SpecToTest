@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 
 from tcg.gui.dialog_editor import MappingEditorDialog
 from tcg.gui.models import MappingItem, MappingStudioState, OperationInfo
+from tcg.gui.styles import get_monospace_font
 from tcg.gui.view_mappings import MappingsView
 
 
@@ -232,7 +233,7 @@ class CatalogWorkspace(QWidget):
         self.tmpl_table.setRowCount(len(op.linked_mappings))
         for row, m in enumerate(op.linked_mappings):
             id_item = QTableWidgetItem(m.id)
-            id_item.setFont(QFont("Monospace", 9, QFont.Weight.Bold))
+            id_item.setFont(get_monospace_font(9, bold=True))
             self.tmpl_table.setItem(row, 0, id_item)
 
             tmpl_item = QTableWidgetItem(m.template)

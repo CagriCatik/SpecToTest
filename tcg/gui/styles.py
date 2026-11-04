@@ -1,10 +1,26 @@
 """Modern dark and light stylesheets for SpecToTest GUI."""
+from PySide6.QtGui import QFont, QFontDatabase
+
+
+def get_monospace_font(size: int = 10, bold: bool = False) -> QFont:
+    """Return platform-native monospace font without triggering font-alias lookup warnings."""
+    font = QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont)
+    if size > 0:
+        font.setPointSize(size)
+    if bold:
+        font.setWeight(QFont.Weight.Bold)
+    return font
+
+
+def get_monospace_family() -> str:
+    """Return the family name of the platform-native monospace font."""
+    return QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont).family()
+
 
 DARK_THEME_QSS = """
 QMainWindow, QDialog, QWidget {
     background-color: #1e1e24;
     color: #e0e0e0;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     font-size: 13px;
 }
 
@@ -132,7 +148,6 @@ LIGHT_THEME_QSS = """
 QMainWindow, QDialog, QWidget {
     background-color: #f8f9fa;
     color: #212529;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     font-size: 13px;
 }
 

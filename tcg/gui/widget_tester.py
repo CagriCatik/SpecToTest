@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 )
 
 from tcg.gui.models import MappingStudioState
+from tcg.gui.styles import get_monospace_font
 
 
 class SentenceTesterWidget(QWidget):
@@ -63,7 +64,7 @@ class SentenceTesterWidget(QWidget):
 
         self.sentence_edit = QLineEdit()
         self.sentence_edit.setPlaceholderText("Gib hier einen natürlichen Spezifikationssatz ein, z.B. 'Batteriespannung = 13.8V'...")
-        self.sentence_edit.setFont(QFont("Monospace", 10))
+        self.sentence_edit.setFont(get_monospace_font(10))
         self.sentence_edit.returnPressed.connect(self.run_test)
         input_box.addWidget(self.sentence_edit, stretch=3)
 
@@ -94,7 +95,7 @@ class SentenceTesterWidget(QWidget):
 
         self.details_edit = QTextEdit()
         self.details_edit.setReadOnly(True)
-        self.details_edit.setFont(QFont("Monospace", 9))
+        self.details_edit.setFont(get_monospace_font(9))
         self.details_edit.setMaximumHeight(160)
         res_layout.addWidget(self.details_edit)
 

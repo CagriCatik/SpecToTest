@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 
 from tcg.core.contracts import OperationContract, ParameterSpec
 from tcg.gui.models import MappingItem, extract_template_placeholders, validate_single_mapping
+from tcg.gui.styles import get_monospace_font
 
 
 class MappingEditorDialog(QDialog):
@@ -207,7 +208,7 @@ class MappingEditorDialog(QDialog):
         for row, ph in enumerate(placeholders):
             # 1. Placeholder item
             ph_item = QTableWidgetItem(f"{{{ph}}}")
-            ph_item.setFont(QFont("Monospace", 10, QFont.Weight.Bold))
+            ph_item.setFont(get_monospace_font(10, bold=True))
             ph_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
             self.binding_table.setItem(row, 0, ph_item)
 

@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 
 from tcg.gui.dialog_editor import MappingEditorDialog
 from tcg.gui.models import MappingStudioState, OperationInfo
+from tcg.gui.styles import get_monospace_font
 
 
 class OperationsView(QWidget):
@@ -197,7 +198,7 @@ class OperationsView(QWidget):
 
             # 1. Operation Name
             name_item = QTableWidgetItem(op_name)
-            name_item.setFont(QFont("Monospace", 9, QFont.Weight.Bold))
+            name_item.setFont(get_monospace_font(9, bold=True))
             self.table.setItem(row, 1, name_item)
 
             # 2. Phases
@@ -269,7 +270,7 @@ class OperationsView(QWidget):
         self.params_table.setRowCount(len(op_info.parameters))
         for r, p in enumerate(op_info.parameters):
             p_name_item = QTableWidgetItem(p.name)
-            p_name_item.setFont(QFont("Monospace", 9, QFont.Weight.Bold))
+            p_name_item.setFont(get_monospace_font(9, bold=True))
             self.params_table.setItem(r, 0, p_name_item)
 
             # Type description
