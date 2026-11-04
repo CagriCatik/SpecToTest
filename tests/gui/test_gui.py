@@ -163,6 +163,33 @@ class GuiFacadeAndInspectionTests(unittest.TestCase):
         self.assertEqual(step_action.arguments["value"], Decimal('7'))
         self.assertIn("set_battery_voltage(bench, value=Decimal('7.000'))", step_action.rendered_call)
 
+        # Check Action <-> Expectation linking (Action step 20 at line 6 links to Expectation step 20 at line 10)
+        self.assertEqual(step_action.linked_step_line, 10)
+        step_exp = result.steps_by_line.get(10)
+        self.assertIsNotNone(step_exp)
+        self.assertEqual(step_exp.linked_step_line, 6)
+
+    def test_compilation_facade_rejects_duplicate_mapping_ids(self):
+        state = MappingStudioState(
+            registry_target="operations.registry:REGISTRY",
+            mapping_file="inputs/operation_mapping.toml",
+            resources_file="inputs/resources.json",
+        )
+        mapping_dicts = [m.to_dict() for m in state.mappings if m.is_valid and not m.has_conflict]
+        # Inject duplicate mapping id
+        dup_dict = dict(mapping_dicts[0])
+        mapping_dicts.append(dup_dict)
+
+        result = CompilationFacade.compile_text(
+            text="# Test\n## Action\n10. Warte 1 s",
+            source_name="dup_test.md",
+            registry=state.registry,
+            mapping_dicts=mapping_dicts,
+            profile=state.profile,
+        )
+        self.assertFalse(result.success)
+        self.assertTrue(any("mehrfach definiert" in err.message for err in result.errors))
+
     def test_impact_analysis_counts(self):
         state = MappingStudioState(
             registry_target="operations.registry:REGISTRY",
@@ -209,8 +236,10 @@ class GuiWindowWorkspacesIntegrationTests(unittest.TestCase):
         self.assertIsNotNone(win.workspace_specs.current_spec_path)
         self.assertTrue(len(win.workspace_specs.editor.toPlainText()) > 0)
 
-        # Workspace 2: Catalog has Mappings and Operations sub-tabs
-        self.assertEqual(win.workspace_catalog.sub_tabs.count(), 2)
+        # Workspace 2: Unified Catalog has operations list and templates table
+        self.assertTrue(win.workspace_catalog.op_list.count() > 0)
+        self.assertIsNotNone(win.workspace_catalog.btn_generate_sentence)
+        self.assertIsNotNone(win.workspace_catalog.btn_insert_spec)
 
         # Switch profile to service pilot
         service_prof = next(p for p in win.builtin_profiles if p.id == "service_pilot")
@@ -220,3 +249,106 @@ class GuiWindowWorkspacesIntegrationTests(unittest.TestCase):
         self.assertEqual(win.state.profile_config.id, "service_pilot")
         self.assertEqual(len(win.state.operations), 9)
         self.assertEqual(win.state.profile_config.specs_dir, "examples/service_pilot/inputs/specs")
+
+    def test_vice_versa_sentence_generation_and_insertion(self):
+        win = MappingStudioWindow()
+        catalog = win.workspace_catalog
+
+        # 1. Select 'wait' operation
+        catalog.select_operation_by_name("wait")
+        self.assertEqual(catalog.current_op_name, "wait")
+        self.assertTrue(catalog.table_templates.rowCount() > 0)
+
+        # Select first template: 'Warte {dauer}'
+        catalog.table_templates.selectRow(0)
+
+        # Set parameter: 500 ms
+        param_widget = catalog.param_inputs.get("dauer")
+        self.assertIsNotNone(param_widget)
+        # It's a QuantityWidget with spinbox and unit_combo
+        param_widget.spinbox.setValue(500)
+        param_widget.unit_combo.setCurrentText("ms")
+
+        # 2. Generate sentence
+        catalog.generate_vice_versa_sentence()
+        generated = catalog.txt_preview_sentence.text().strip()
+        self.assertEqual(generated, "Warte 500 ms")
+
+        # 3. Verify reverse resolution proof
+        ok, op_name, args, err = catalog.verify_generated_sentence(generated)
+        self.assertTrue(ok)
+        self.assertEqual(op_name, "wait")
+        from decimal import Decimal
+        self.assertEqual(args.get("seconds"), Decimal("0.500"))
+
+        # 4. Insert into open specification
+        initial_text = win.workspace_specs.editor.toPlainText()
+        catalog.insert_into_active_specification()
+
+        # Should switch to Spezifikationen tab (index 0) and contain the sentence
+        self.assertEqual(win.tabs.currentIndex(), 0)
+        new_text = win.workspace_specs.editor.toPlainText()
+        self.assertIn("Warte 500 ms", new_text)
+        self.assertTrue(win.workspace_specs.is_spec_dirty)
+
+    def test_specification_dirty_tracking(self):
+        win = MappingStudioWindow()
+        specs = win.workspace_specs
+        self.assertFalse(specs.is_spec_dirty)
+
+        # Simulate user typing
+        specs.editor.insertPlainText("\n# Dirty test comment")
+        self.assertTrue(specs.is_spec_dirty)
+
+        # Reset without disk save
+        specs.is_spec_dirty = False
+        self.assertFalse(specs.is_spec_dirty)
+
+    def test_transactional_profile_switch_rejects_broken_profile(self):
+        win = MappingStudioWindow()
+        initial_id = win.state.profile_config.id
+
+        broken_prof = ProjectProfile(
+            id="broken_profile",
+            name="Broken",
+            registry_target="non_existent_module.invalid:NONE",
+            mapping_files=["inputs/operation_mapping.toml"],
+            resources_file="inputs/resources.json",
+            specs_dir="inputs",
+        )
+
+        ok, err = win.state.set_project_profile(broken_prof)
+        self.assertFalse(ok)
+        self.assertIn("non_existent_module", err)
+        # Ensure state was not corrupted
+        self.assertEqual(win.state.profile_config.id, initial_id)
+        self.assertEqual(len(win.state.operations), 24)
+
+    def test_action_expectation_navigation(self):
+        win = MappingStudioWindow()
+        specs = win.workspace_specs
+
+        spec_sample = """# TC_NAV
+## Action
+10. Batteriespannung = 12V
+
+## Expected Result
+10. Fehlerspeichereintrag DTC00173 eingetragen
+"""
+        specs.editor.setPlainText(spec_sample)
+        specs.compile_current_text()
+
+        # Place cursor on line 3 ("10. Batteriespannung = 12V")
+        cursor = specs.editor.textCursor()
+        cursor.setPosition(specs.editor.document().findBlockByNumber(2).position())
+        specs.editor.setTextCursor(cursor)
+        specs.inspect_current_line()
+
+        # Check linked line is line 6 (index 5)
+        self.assertIsNotNone(specs.current_linked_line)
+        self.assertEqual(specs.current_linked_line, 6)
+
+        # Jump to linked line
+        specs.jump_to_linked_line()
+        current_cursor_line = specs.editor.textCursor().blockNumber() + 1
+        self.assertEqual(current_cursor_line, 6)

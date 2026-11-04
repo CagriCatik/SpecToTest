@@ -1,4 +1,4 @@
-"""Project profile definitions and management for SpecToTest GUI."""
+"""Project profile definitions, validation, and multi-file management for SpecToTest GUI."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -6,21 +6,24 @@ import json
 from pathlib import Path
 from typing import Any
 
+from tcg.core.mapping import load_mapping_files
+from tcg.core.model import SpecError
+
 
 @dataclass
 class ProjectProfile:
     """A cohesive project configuration binding specs, mappings, registry, and bench."""
     id: str
     name: str
-    description: str
     registry_target: str
     mapping_files: list[str]
     resources_file: str
     specs_dir: str
-    output_dir: str
-    reports_dir: str
-    bench_type: str
-    bench_config: str
+    description: str = ""
+    output_dir: str = "generated"
+    reports_dir: str = "reports"
+    bench_type: str = "software"
+    bench_config: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -84,3 +87,54 @@ def get_builtin_profiles(root_dir: Path | None = None) -> list[ProjectProfile]:
             bench_config='examples/service_pilot/inputs/bench_config.json',
         ),
     ]
+
+
+def test_validate_profile(profile: ProjectProfile) -> tuple[bool, str | None, dict[str, Any]]:
+    """Strictly validate loading of all components of a profile before activating it.
+    
+    Returns (success, error_message, loaded_artifacts).
+    """
+    from tcg.gui.models import load_profile_from_file, load_registry_from_target
+    from tcg.gui.toml_io import load_mapping_file
+
+    # 1. Test Registry loading
+    try:
+        registry = load_registry_from_target(profile.registry_target)
+    except Exception as e:
+        return False, f"Registry '{profile.registry_target}' konnte nicht geladen werden: {e}", {}
+
+    # 2. Test ResourceProfile loading
+    try:
+        res_profile = load_profile_from_file(profile.resources_file)
+    except Exception as e:
+        return False, f"Ressourcenprofil '{profile.resources_file}' ist ungültig: {e}", {}
+
+    # 3. Test Loading of ALL mapping files and ensure unique IDs
+    all_raw_mappings = []
+    seen_ids: dict[str, str] = {}
+
+    for mf in profile.mapping_files:
+        p = Path(mf)
+        if not p.is_file():
+            return False, f"Mapping-Datei '{mf}' existiert nicht.", {}
+        raw_list, err = load_mapping_file(p)
+        if err:
+            return False, f"Fehler in Mapping-Datei '{mf}': {err}", {}
+        for entry in raw_list:
+            entry_id = entry.get('id', '').strip()
+            if entry_id in seen_ids:
+                return False, f"Doppelte Mapping-ID '{entry_id}' in '{mf}' (bereits definiert in '{seen_ids[entry_id]}')", {}
+            seen_ids[entry_id] = mf
+            entry['_source_file'] = mf
+            all_raw_mappings.append(entry)
+
+    # 4. Check specifications directory
+    specs_p = Path(profile.specs_dir)
+    if not specs_p.is_dir():
+        return False, f"Spezifikationsverzeichnis '{profile.specs_dir}' existiert nicht.", {}
+
+    return True, None, {
+        'registry': registry,
+        'profile': res_profile,
+        'raw_mappings': all_raw_mappings,
+    }

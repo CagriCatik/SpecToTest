@@ -1,6 +1,7 @@
 """Unified Application Facade bridging core compiler and PySide6 GUI."""
 from __future__ import annotations
 
+import ast
 from dataclasses import dataclass, field
 from pathlib import Path
 import re
@@ -10,7 +11,7 @@ from tcg.adapters.inbound.text_parser import parse_text_lines
 from tcg.adapters.outbound.python_emitter import render_python
 from tcg.core.compiler import compile_cases
 from tcg.core.mapping import load_mappings
-from tcg.core.model import Loop, SpecError, Step, TestCase
+from tcg.core.model import SpecError, Step, TestCase
 from tcg.core.profile import ResourceProfile
 
 
@@ -37,6 +38,8 @@ class StepInspectionInfo:
     rendered_call: str
     is_expectation: bool
     attached_to_step: int | None
+    linked_step_line: int | None = None
+    linked_step_desc: str | None = None
 
 
 @dataclass
@@ -49,6 +52,7 @@ class CompilationResult:
     errors: list[CompilationError] = field(default_factory=list)
     steps_by_line: dict[int, StepInspectionInfo] = field(default_factory=dict)
     summary: str = ''
+    project_valid: bool = True
 
 
 @dataclass
@@ -59,6 +63,7 @@ class MappingImpact:
     affected_cases: set[str] = field(default_factory=set)
     affected_files: set[str] = field(default_factory=set)
     occurrences: list[tuple[str, int]] = field(default_factory=list)  # (file_name, line_number)
+    failed_files: list[tuple[str, str]] = field(default_factory=list)  # (file_name, error_reason)
 
 
 class CompilationFacade:
@@ -97,11 +102,38 @@ class CompilationFacade:
         registry: dict[str, Any],
         mapping_dicts: list[dict[str, Any]],
         profile: ResourceProfile,
+        strict_project_check: bool = True,
     ) -> CompilationResult:
-        """Compile a specification string in memory using the core compiler."""
+        """Compile a specification string in memory using the core compiler.
+        
+        Follows identical validation rules as CLI generate.py.
+        """
         raw_lines = text.splitlines()
 
-        # 1. Parse into section tables
+        # 1. Check for duplicate IDs or invalid project mappings
+        id_counts: dict[str, int] = {}
+        for m in mapping_dicts:
+            mid = m.get('id', '').strip()
+            if mid:
+                id_counts[mid] = id_counts.get(mid, 0) + 1
+
+        duplicate_ids = [mid for mid, count in id_counts.items() if count > 1]
+        if strict_project_check and duplicate_ids:
+            return CompilationResult(
+                success=False,
+                source_name=source_name,
+                project_valid=False,
+                errors=[
+                    CompilationError(
+                        line=None,
+                        message=f"Projektweiter Konflikt: Mapping-ID '{dup}' ist mehrfach definiert."
+                    )
+                    for dup in duplicate_ids
+                ],
+                summary=f"Projektweite Mapping-Konflikte ({len(duplicate_ids)}) verhindern die Übersetzung.",
+            )
+
+        # 2. Parse spec into section tables
         try:
             sections = parse_text_lines(raw_lines, source_name=source_name)
         except SpecError as e:
@@ -114,18 +146,19 @@ class CompilationFacade:
                 summary=f"Parser-Fehler: {e}",
             )
 
-        # 2. Compile mappings
+        # 3. Compile mappings
         try:
             compiled_mappings = load_mappings(mapping_dicts, registry, source='GUI_Facade')
         except SpecError as e:
             return CompilationResult(
                 success=False,
                 source_name=source_name,
-                errors=[CompilationError(line=None, message=p) for p in e.problems],
-                summary="Mapping-Fehler verhindern die Übersetzung.",
+                project_valid=False,
+                errors=[CompilationError(line=None, message=f"Mapping-Fehler: {p}") for p in e.problems],
+                summary="Mapping-Fehler im Projekt verhindern die Übersetzung.",
             )
 
-        # 3. Compile cases
+        # 4. Compile cases
         try:
             cases = compile_cases(sections, compiled_mappings, profile, source_file=source_name)
         except SpecError as e:
@@ -138,15 +171,36 @@ class CompilationFacade:
                 summary=f"Compiler-Fehler: {e}",
             )
 
-        # 4. Render Python source
+        # 5. Render Python source and validate AST strictly (Bug 4 fix)
         try:
             python_source = render_python(cases, registry, runner_module='tcg.runtime.runner')
+            ast.parse(python_source)
         except Exception as e:
-            python_source = f"# Fehler beim Erzeugen des Python-Codes: {e}"
+            return CompilationResult(
+                success=False,
+                source_name=source_name,
+                cases=list(cases),
+                python_code=f"# FEHLER BEI DER CODE-GENERIERUNG:\n# {e}",
+                errors=[CompilationError(line=None, message=f"Code-Generierung fehlgeschlagen: {e}")],
+                summary=f"Emitter-Fehler: {e}",
+            )
 
-        # 5. Extract line-by-line inspection info
+        # 6. Extract line-by-line inspection info with Action <-> Expectation linking
         steps_by_line: dict[int, StepInspectionInfo] = {}
         mapping_templates = {m['id']: m.get('template', '') for m in mapping_dicts}
+
+        # Build index of action steps and expectation steps by test_step number
+        actions_by_step: dict[tuple[str, int], Step] = {}
+        expectations_by_step: dict[tuple[str, int], list[Step]] = {}
+
+        for case in cases:
+            for step in case.all_steps():
+                if step.test_step is not None:
+                    key = (case.id, step.test_step)
+                    if step.phase != 'EXPECTED':
+                        actions_by_step[key] = step
+                    else:
+                        expectations_by_step.setdefault(key, []).append(step)
 
         for case in cases:
             for step in case.all_steps():
@@ -155,6 +209,24 @@ class CompilationFacade:
                 args_dict = dict(step.arguments)
                 args_str = ", ".join(f"{k}={v!r}" for k, v in args_dict.items())
                 call_code = f"{step.contract.id}(bench, {args_str})" if args_str else f"{step.contract.id}(bench)"
+
+                is_exp = (step.phase == 'EXPECTED')
+                linked_line = None
+                linked_desc = None
+
+                if step.test_step is not None:
+                    key = (case.id, step.test_step)
+                    if is_exp:
+                        action_step = actions_by_step.get(key)
+                        if action_step:
+                            linked_line = action_step.source.row
+                            linked_desc = f"Aktionsschritt {action_step.test_step} (Zeile {linked_line}): {action_step.description}"
+                    else:
+                        exp_steps = expectations_by_step.get(key, [])
+                        if exp_steps:
+                            linked_line = exp_steps[0].source.row
+                            exp_descs = [f"Zeile {s.source.row}: {s.description}" for s in exp_steps]
+                            linked_desc = f"Zugeordnete Erwartung(en): {', '.join(exp_descs)}"
 
                 info = StepInspectionInfo(
                     line=line,
@@ -166,8 +238,10 @@ class CompilationFacade:
                     operation_doc=doc,
                     arguments=args_dict,
                     rendered_call=call_code,
-                    is_expectation=(step.phase == 'EXPECTED'),
-                    attached_to_step=step.test_step if step.phase == 'EXPECTED' else None,
+                    is_expectation=is_exp,
+                    attached_to_step=step.test_step if is_exp else None,
+                    linked_step_line=linked_line,
+                    linked_step_desc=linked_desc,
                 )
                 steps_by_line[line] = info
 
@@ -179,6 +253,7 @@ class CompilationFacade:
             errors=[],
             steps_by_line=steps_by_line,
             summary=f"Erfolgreich übersetzt: {len(cases)} Testfall/Testfälle, {len(steps_by_line)} Schritte.",
+            project_valid=True,
         )
 
     @classmethod
@@ -189,14 +264,20 @@ class CompilationFacade:
         mapping_dicts: list[dict[str, Any]],
         profile: ResourceProfile,
     ) -> dict[str, MappingImpact]:
-        """Analyze how many times each mapping is used across all project specification files."""
+        """Analyze mapping usage across all specs, explicitly tracking unparseable files."""
         impacts: dict[str, MappingImpact] = {
             m['id']: MappingImpact(mapping_id=m['id']) for m in mapping_dicts
         }
+        failed_files: list[tuple[str, str]] = []
 
         try:
             compiled_mappings = load_mappings(mapping_dicts, registry, source='GUI_Impact')
-        except Exception:
+        except Exception as e:
+            # If mappings themselves are broken, flag all files as failed
+            for p in specs_files:
+                failed_files.append((p.name, f"Mapping-Fehler: {e}"))
+            for imp in impacts.values():
+                imp.failed_files = list(failed_files)
             return impacts
 
         for path in specs_files:
@@ -214,9 +295,12 @@ class CompilationFacade:
                         imp.affected_cases.add(case.id)
                         imp.affected_files.add(path.name)
                         imp.occurrences.append((path.name, step.source.row))
-            except Exception:
-                # If a specific spec file fails, continue analyzing the rest
-                continue
+            except Exception as e:
+                failed_files.append((path.name, str(e)))
+
+        # Attach failed files info to all mapping impact reports
+        for imp in impacts.values():
+            imp.failed_files = list(failed_files)
 
         return impacts
 
@@ -243,7 +327,6 @@ class CompilationFacade:
     def _build_compile_error_result(source_name: str, problems: tuple[str, ...], lines: list[str]) -> CompilationResult:
         errors = []
         for prob in problems:
-            # Pattern: source_file:line [Section] (ID): message
             match = re.search(r':(\d+)\s+\[([^\]]+)\](?:\s*\([^)]+\))?:\s*(.*)', prob)
             if match:
                 ln = int(match.group(1))

@@ -79,6 +79,11 @@ class MappingStudioWindow(QMainWindow):
         act_save_as.triggered.connect(self.action_save_file_as)
         file_menu.addAction(act_save_as)
 
+        act_save_spec = QAction("Aktive Spezifikation speichern", self)
+        act_save_spec.setShortcut(QKeySequence("Ctrl+Alt+S"))
+        act_save_spec.triggered.connect(lambda: self.workspace_specs.save_current_spec())
+        file_menu.addAction(act_save_spec)
+
         act_open = QAction("Mapping-Datei &öffnen...", self)
         act_open.setShortcut(QKeySequence.StandardKey.Open)
         act_open.triggered.connect(self.action_open_file)
@@ -132,6 +137,7 @@ class MappingStudioWindow(QMainWindow):
         # Workspace 2: Operationskatalog (Mappings & Operationen)
         self.workspace_catalog = CatalogWorkspace(self.state, on_change=self.on_state_changed, parent=self)
         self.workspace_catalog.test_sentence_requested.connect(self.switch_to_tester_with_sentence)
+        self.workspace_catalog.insert_sentence_into_spec.connect(self.on_insert_sentence_from_catalog)
         self.tabs.addTab(self.workspace_catalog, "Operationskatalog")
 
         # Workspace 3: Satzprüfung
@@ -217,38 +223,58 @@ class MappingStudioWindow(QMainWindow):
         self.tabs.setCurrentIndex(2)
         self.workspace_tester.set_sentence(sentence)
 
-    def switch_project_profile(self, profile: ProjectProfile, prompt_save: bool = True):
-        if prompt_save and self.state.is_dirty:
-            reply = QMessageBox.question(
-                self,
-                "Ungespeicherte Änderungen",
-                f"Es gibt ungespeicherte Änderungen im aktuellen Profil '{self.state.profile_config.name}'.\n"
-                f"Möchtest du die Änderungen speichern, bevor das Profil gewechselt wird?",
-                QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel,
-                QMessageBox.StandardButton.Save,
-            )
-            if reply == QMessageBox.StandardButton.Save:
-                self.action_save_file()
-            elif reply == QMessageBox.StandardButton.Cancel:
-                return
+    def on_insert_sentence_from_catalog(self, sentence: str):
+        """Switch to specification editor and insert the verified sentence at cursor."""
+        self.tabs.setCurrentIndex(0)
+        self.workspace_specs.insert_statement_at_cursor(sentence)
+        self.status_bar.showMessage("Satz in Spezifikation eingefügt", 4000)
 
-        self.state.set_project_profile(profile)
+    def switch_project_profile(self, profile: ProjectProfile, prompt_save: bool = True):
+        if prompt_save:
+            if hasattr(self, 'workspace_specs') and not self.workspace_specs.prompt_save_spec_if_dirty():
+                return
+            if self.state.is_dirty:
+                reply = QMessageBox.question(
+                    self,
+                    "Ungespeicherte Änderungen",
+                    f"Es gibt ungespeicherte Mappings im aktuellen Profil '{self.state.profile_config.name}'.\n"
+                    f"Möchtest du die Änderungen speichern, bevor das Profil gewechselt wird?",
+                    QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel,
+                    QMessageBox.StandardButton.Save,
+                )
+                if reply == QMessageBox.StandardButton.Save:
+                    self.action_save_file()
+                elif reply == QMessageBox.StandardButton.Cancel:
+                    return
+
+        ok, err = self.state.set_project_profile(profile)
+        if not ok:
+            QMessageBox.critical(
+                self,
+                "Fehler beim Profilwechsel",
+                f"Projektprofil '{profile.name}' konnte nicht aktiviert werden:\n\n{err}",
+            )
+            return
+
         self.workspace_specs.refresh_spec_list()
         self.on_state_changed()
         self.status_bar.showMessage(f"Projektprofil gewechselt zu: {profile.name}", 5000)
 
     def switch_registry(self, target: str, resources: str | None = None, prompt_save: bool = True):
         """Backwards compatibility helper."""
-        if prompt_save and self.state.is_dirty:
-            reply = QMessageBox.question(
-                self,
-                "Ungespeicherte Änderungen",
-                "Es gibt ungespeicherte Änderungen. Möchtest du wirklich die Registry wechseln?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
-            )
-            if reply != QMessageBox.StandardButton.Yes:
+        if prompt_save:
+            if hasattr(self, 'workspace_specs') and not self.workspace_specs.prompt_save_spec_if_dirty():
                 return
+            if self.state.is_dirty:
+                reply = QMessageBox.question(
+                    self,
+                    "Ungespeicherte Änderungen",
+                    "Es gibt ungespeicherte Änderungen. Möchtest du wirklich die Registry wechseln?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No,
+                )
+                if reply != QMessageBox.StandardButton.Yes:
+                    return
 
         self.state.registry_target = target
         if resources:
@@ -310,6 +336,10 @@ class MappingStudioWindow(QMainWindow):
             self.action_save_file()
 
     def closeEvent(self, event):
+        if hasattr(self, 'workspace_specs'):
+            if not self.workspace_specs.prompt_save_spec_if_dirty():
+                event.ignore()
+                return
         if self.state.is_dirty:
             reply = QMessageBox.question(
                 self,

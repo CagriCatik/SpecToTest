@@ -18,7 +18,7 @@ from tcg.core.mapping import (
 )
 from tcg.core.model import SpecError, VariableRef
 from tcg.core.profile import ResourceProfile, parse_profile
-from tcg.gui.profiles import ProjectProfile, get_builtin_profiles
+from tcg.gui.profiles import ProjectProfile, get_builtin_profiles, test_validate_profile
 
 
 @dataclass
@@ -28,6 +28,7 @@ class MappingItem:
     template: str
     operation: str
     parameters: dict[str, str] = field(default_factory=dict)
+    source_file: str = ''
     
     # Computed metadata
     is_valid: bool = False
@@ -37,12 +38,15 @@ class MappingItem:
     allowed_phases: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        d = {
             'id': self.id,
             'template': self.template,
             'operation': self.operation,
             'parameters': dict(self.parameters),
         }
+        if self.source_file:
+            d['_source_file'] = self.source_file
+        return d
 
 
 @dataclass
@@ -198,16 +202,30 @@ class MappingStudioState:
 
         self.reload_all()
 
-    def set_project_profile(self, profile: ProjectProfile):
-        """Switch to a new ProjectProfile cleanly and atomically."""
+    def set_project_profile(self, profile: ProjectProfile) -> tuple[bool, str | None]:
+        """Atomically switch to a new ProjectProfile.
+        
+        Strictly validates loading of all components BEFORE touching state.
+        If validation fails, state remains 100% untouched!
+        """
+        ok, err, artifacts = test_validate_profile(profile)
+        if not ok:
+            return False, err
+
+        # Commit state change atomically
         self.profile_config = profile
         self.registry_target = profile.registry_target
+        self.registry = artifacts['registry']
+        self.profile = artifacts['profile']
         self.mapping_file = Path(profile.mapping_files[0]) if profile.mapping_files else None
         self.resources_file = Path(profile.resources_file) if profile.resources_file else None
-        self.reload_all()
+
+        self.set_mappings_from_dicts(artifacts['raw_mappings'])
+        self.is_dirty = False
+        return True, None
 
     def reload_all(self):
-        """Reload registry, profile, and mappings."""
+        """Reload registry, profile, and all mapping files of the active profile."""
         try:
             self.registry = load_registry_from_target(self.registry_target)
         except Exception as e:
@@ -220,13 +238,24 @@ class MappingStudioState:
             self.profile = ResourceProfile('EMPTY', {})
             print(f"Warnung: Konnte Profil '{self.resources_file}' nicht laden: {e}")
 
-        if self.mapping_file and self.mapping_file.exists():
-            from tcg.gui.toml_io import load_mapping_file
-            raw_mappings, err = load_mapping_file(self.mapping_file)
-            if not err:
-                self.set_mappings_from_dicts(raw_mappings)
-            else:
-                self.mappings = []
+        all_raw = []
+        from tcg.gui.toml_io import load_mapping_file
+
+        mapping_paths = self.profile_config.mapping_files if self.profile_config else []
+        if not mapping_paths and self.mapping_file:
+            mapping_paths = [str(self.mapping_file)]
+
+        for mf in mapping_paths:
+            p = Path(mf)
+            if p.is_file():
+                raw, err = load_mapping_file(p)
+                if not err:
+                    for entry in raw:
+                        entry['_source_file'] = str(p)
+                        all_raw.append(entry)
+
+        if all_raw:
+            self.set_mappings_from_dicts(all_raw)
         else:
             self.mappings = []
 
@@ -241,6 +270,7 @@ class MappingStudioState:
                 template=d.get('template', ''),
                 operation=d.get('operation', ''),
                 parameters=dict(d.get('parameters', {})),
+                source_file=d.get('_source_file', ''),
             )
             for d in dicts
         ]
