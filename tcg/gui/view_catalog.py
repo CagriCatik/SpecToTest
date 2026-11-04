@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import re
-from typing import Callable
+from typing import Any, Callable
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QFont
