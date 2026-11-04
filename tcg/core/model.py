@@ -48,8 +48,18 @@ class BinaryCondition:
 
 
 @dataclass(frozen=True)
+class CompoundCondition:
+    left: object  # BinaryCondition | CompoundCondition
+    op: str       # 'and' | 'or'
+    right: object # BinaryCondition | CompoundCondition
+
+    def render(self):
+        return f'({self.left.render()} {self.op} {self.right.render()})'
+
+
+@dataclass(frozen=True)
 class BreakStatement:
-    condition: BinaryCondition | None
+    condition: BinaryCondition | CompoundCondition | None
     step_label: int | None
     source: SourceRef
 
@@ -77,7 +87,16 @@ class Step:
 class Loop:
     variable: str
     items: tuple
-    body: tuple  # tuple of Step | BreakStatement | Loop | IfBlock | SwitchBlock
+    body: tuple  # tuple of Step | BreakStatement | Loop | WhileLoop | IfBlock | SwitchBlock
+    step_label: int | None
+    source: SourceRef
+    phase: str  # PRECONDITION, ACTION, CLEANUP
+
+
+@dataclass(frozen=True)
+class WhileLoop:
+    condition: BinaryCondition | CompoundCondition
+    body: tuple  # tuple of Step | BreakStatement | Loop | WhileLoop | IfBlock | SwitchBlock
     step_label: int | None
     source: SourceRef
     phase: str  # PRECONDITION, ACTION, CLEANUP
@@ -85,7 +104,7 @@ class Loop:
 
 @dataclass(frozen=True)
 class IfBranch:
-    condition: BinaryCondition
+    condition: BinaryCondition | CompoundCondition
     body: tuple
     step_label: int | None
     source: SourceRef
@@ -124,7 +143,8 @@ class TestCase:
     name: str
     objective: str | None
     profile_id: str
-    steps: tuple  # tuple of Step | Loop | IfBlock | SwitchBlock
+    steps: tuple  # tuple of Step | Loop | WhileLoop | IfBlock | SwitchBlock
+    requirement: str | None = None
     raw_spec: str | None = None
 
     def all_steps(self):
@@ -133,7 +153,7 @@ class TestCase:
             for item in items:
                 if isinstance(item, Step):
                     yield item
-                elif isinstance(item, Loop):
+                elif isinstance(item, (Loop, WhileLoop)):
                     yield from _collect(item.body)
                 elif isinstance(item, IfBlock):
                     for branch in item.branches:

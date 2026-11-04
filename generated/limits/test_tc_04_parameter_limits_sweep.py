@@ -7,6 +7,8 @@ import operations.timing as _op_timing
 def run_tc_04_parameter_limits_sweep(bench):
     """Original Test Specification:
     ========================================================================
+    Requirement: REQ_LIMITS_SWEEP_001
+    
     Precondition
     10. Bildschirm HOME auswählen
     20. Parameter LIMIT auf 0 schreiben

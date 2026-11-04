@@ -8,6 +8,8 @@ import operations.timing as _op_timing
 def run_tc_10_bms_thermal_derating_sweep(bench):
     """Original Test Specification:
     ========================================================================
+    Requirement: REQ_BMS_THERMAL_DERATING_001
+    
     Precondition
     10. Zündung an
     20. CAN-Signal Clamp15Status auf 1 setzen

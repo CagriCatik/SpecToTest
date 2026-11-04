@@ -10,7 +10,9 @@ from .expectations import (
 from .mapping import resolve, single_line_text
 from .parameters import convert_argument
 from .model import (
+    BinaryCondition,
     BreakStatement,
+    CompoundCondition,
     IfBlock,
     IfBranch,
     Loop,
@@ -22,6 +24,7 @@ from .model import (
     SwitchCase,
     TestCase,
     VariableRef,
+    WhileLoop,
 )
 
 SPEC_SECTIONS = ('Testfaelle', 'Vorbedingungen', 'Ablauf', 'Nachbedingungen', 'Erwartungen')
@@ -44,7 +47,8 @@ def _metadata(rows):
             objective = data['Testziel']
             if objective is not None:
                 objective = single_line_text(objective, f'{where} Testziel')
-            cases.append({'id': test_id, 'name': name, 'objective': objective, 'line': line,
+            cases.append({'id': test_id, 'name': name, 'objective': objective,
+                          'requirement': data.get('Anforderung'), 'line': line,
                           'raw_spec': data.get('raw_spec')})
         except SpecError as error:
             problems.extend(error.problems)
@@ -153,6 +157,19 @@ def _compile_command(execution_id, requested_phase, test_step, text, line, secti
                 mapping.id, source, text)
 
 
+def _check_condition_scope(cond, scope, source_file, line, section, context_name):
+    if cond is None:
+        return
+    if isinstance(cond, CompoundCondition):
+        _check_condition_scope(cond.left, scope, source_file, line, section, context_name)
+        _check_condition_scope(cond.right, scope, source_file, line, section, context_name)
+    elif isinstance(cond, BinaryCondition):
+        if cond.left not in scope:
+            raise SpecError(f'{source_file}:{line} [{section}]: variable {cond.left!r} in {context_name} condition is undefined; in scope: {sorted(scope)}')
+        if isinstance(cond.right, VariableRef) and cond.right.name not in scope:
+            raise SpecError(f'{source_file}:{line} [{section}]: variable {cond.right.name!r} on right-hand side of {context_name} condition is undefined; in scope: {sorted(scope)}')
+
+
 def _compile_loop_body(body_items, section, phase, source_file, mappings, profile, used_ids,
                        scope, raw_vars, conv_vars):
     body_steps = []
@@ -168,24 +185,24 @@ def _compile_loop_body(body_items, section, phase, source_file, mappings, profil
             body_steps.append(step)
         elif item_type == 'break':
             cond = body_item.get('condition')
-            if cond is not None:
-                if cond.left not in scope:
-                    raise SpecError(f'{source_file}:{body_line} [{section}]: variable {cond.left!r} in BREAK condition is undefined; in scope: {sorted(scope)}')
-                if isinstance(cond.right, VariableRef) and cond.right.name not in scope:
-                    raise SpecError(f'{source_file}:{body_line} [{section}]: variable {cond.right.name!r} on right-hand side of BREAK condition is undefined; in scope: {sorted(scope)}')
+            _check_condition_scope(cond, scope, source_file, body_line, section, 'BREAK')
             body_steps.append(BreakStatement(condition=cond, step_label=step_label,
                                              source=SourceRef(source_file, section, body_line)))
         elif item_type == 'loop':
             nested = _compile_loop(body_item, body_line, section, phase, source_file, mappings, profile, used_ids,
                                    parent_scope=scope, parent_raw_vars=raw_vars, parent_conv_vars=conv_vars)
             body_steps.append(nested)
+        elif item_type == 'while':
+            cond = body_item.get('condition')
+            _check_condition_scope(cond, scope, source_file, body_line, section, 'WHILE')
+            compiled_b = _compile_loop_body(body_item.get('body', []), section, phase, source_file, mappings, profile, used_ids,
+                                            scope, raw_vars, conv_vars)
+            body_steps.append(WhileLoop(condition=cond, body=tuple(compiled_b), step_label=step_label,
+                                        source=SourceRef(source_file, section, body_line), phase=phase))
         elif item_type == 'if':
             branches = []
             for b_step, cond, b_body in body_item.get('branches', []):
-                if cond.left not in scope:
-                    raise SpecError(f'{source_file}:{body_line} [{section}]: variable {cond.left!r} in IF condition is undefined; in scope: {sorted(scope)}')
-                if isinstance(cond.right, VariableRef) and cond.right.name not in scope:
-                    raise SpecError(f'{source_file}:{body_line} [{section}]: variable {cond.right.name!r} on right-hand side of IF condition is undefined; in scope: {sorted(scope)}')
+                _check_condition_scope(cond, scope, source_file, body_line, section, 'IF')
                 compiled_b = _compile_loop_body(b_body, section, phase, source_file, mappings, profile, used_ids,
                                                 scope, raw_vars, conv_vars)
                 branches.append(IfBranch(condition=cond, body=tuple(compiled_b), step_label=b_step, source=SourceRef(source_file, section, body_line)))
@@ -261,11 +278,7 @@ def _compile_flow_sequence(flow_items, section, phase, source_file, mappings, pr
 
         elif item_type == 'break':
             cond = data.get('condition')
-            if cond is not None:
-                if cond.left not in parent_scope:
-                    raise SpecError(f'{source_file}:{line} [{section}]: variable {cond.left!r} in BREAK condition is undefined; in scope: {sorted(parent_scope)}')
-                if isinstance(cond.right, VariableRef) and cond.right.name not in parent_scope:
-                    raise SpecError(f'{source_file}:{line} [{section}]: variable {cond.right.name!r} on right-hand side of BREAK condition is undefined; in scope: {sorted(parent_scope)}')
+            _check_condition_scope(cond, parent_scope, source_file, line, section, 'BREAK')
             compiled_nodes.append(BreakStatement(condition=cond, step_label=step_num,
                                                  source=SourceRef(source_file, section, line)))
 
@@ -294,13 +307,28 @@ def _compile_flow_sequence(flow_items, section, phase, source_file, mappings, pr
                     compiled_nodes.append(exp_step)
                 del expected_by_step[step_num]
 
+        elif item_type == 'while':
+            cond = data.get('condition')
+            _check_condition_scope(cond, parent_scope, source_file, line, section, 'WHILE')
+            body_nodes = _compile_flow_sequence(data.get('body', []), section, phase, source_file, mappings,
+                                                profile, used_ids, expected_by_step, parent_scope=parent_scope,
+                                                parent_raw_vars=raw_vars, parent_conv_vars=conv_vars)
+            while_node = WhileLoop(condition=cond, body=tuple(body_nodes), step_label=step_num,
+                                   source=SourceRef(source_file, section, line), phase=phase)
+            compiled_nodes.append(while_node)
+            if step_num in expected_by_step:
+                for exp_line, exp_data in expected_by_step[step_num]:
+                    exp_exec_id = _make_id(f'S{step_num}.E' if step_num is not None else f'S{len(compiled_nodes)+1}.E', used_ids)
+                    exp_step = _compile_command(exp_exec_id, 'EXPECTED', step_num, exp_data['Befehl'], exp_line,
+                                                'Erwartungen', source_file, mappings, profile, scope=parent_scope,
+                                                raw_loop_vars=raw_vars, converted_loop_vars=conv_vars)
+                    compiled_nodes.append(exp_step)
+                del expected_by_step[step_num]
+
         elif item_type == 'if':
             branches = []
             for b_step, cond, b_body in data.get('branches', []):
-                if cond.left not in parent_scope:
-                    raise SpecError(f'{source_file}:{line} [{section}]: variable {cond.left!r} in IF condition is undefined; in scope: {sorted(parent_scope)}')
-                if isinstance(cond.right, VariableRef) and cond.right.name not in parent_scope:
-                    raise SpecError(f'{source_file}:{line} [{section}]: variable {cond.right.name!r} on right-hand side of IF condition is undefined; in scope: {sorted(parent_scope)}')
+                _check_condition_scope(cond, parent_scope, source_file, line, section, 'IF')
                 compiled_b = _compile_flow_sequence(b_body, section, phase, source_file, mappings,
                                                     profile, used_ids, expected_by_step, parent_scope=parent_scope,
                                                     parent_raw_vars=raw_vars, parent_conv_vars=conv_vars)
@@ -351,8 +379,6 @@ def _compile_flow_sequence(flow_items, section, phase, source_file, mappings, pr
 
     return compiled_nodes
 
-    return compiled_nodes
-
 
 def _compile_case(metadata, sections, mappings, profile, source_file):
     test_id = metadata['id']
@@ -365,7 +391,7 @@ def _compile_case(metadata, sections, mappings, profile, source_file):
     for line, data in precond_rows:
         if data.get('type') == 'loop':
             steps.append(_compile_loop(data, line, 'Vorbedingungen', 'PRECONDITION', source_file, mappings, profile, used_ids))
-        elif data.get('type') in ('if', 'switch'):
+        elif data.get('type') in ('if', 'switch', 'while'):
             steps.extend(_compile_loop_body([(line, data)], 'Vorbedingungen', 'PRECONDITION', source_file, mappings, profile, used_ids, (), {}, {}))
         else:
             step_num = data.get('Schritt') if data.get('Schritt') is not None else data.get('Reihenfolge')
@@ -418,7 +444,7 @@ def _compile_case(metadata, sections, mappings, profile, source_file):
     for line, data in cleanup_rows:
         if data.get('type') == 'loop':
             steps.append(_compile_loop(data, line, 'Nachbedingungen', 'CLEANUP', source_file, mappings, profile, used_ids))
-        elif data.get('type') in ('if', 'switch'):
+        elif data.get('type') in ('if', 'switch', 'while'):
             steps.extend(_compile_loop_body([(line, data)], 'Nachbedingungen', 'CLEANUP', source_file, mappings, profile, used_ids, (), {}, {}))
         else:
             step_num = data.get('Schritt') if data.get('Schritt') is not None else data.get('Reihenfolge')
@@ -427,7 +453,8 @@ def _compile_case(metadata, sections, mappings, profile, source_file):
                                          'Nachbedingungen', source_file, mappings, profile))
 
     return TestCase(test_id, metadata['name'], metadata['objective'], profile.profile_id,
-                    tuple(steps), raw_spec=metadata.get('raw_spec'))
+                    tuple(steps), requirement=metadata.get('requirement'),
+                    raw_spec=metadata.get('raw_spec'))
 
 
 def compile_cases(sections, mappings, profile, source_file):

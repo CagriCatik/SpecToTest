@@ -1,5 +1,6 @@
 # TESTFALL: TC_08_BMS_HV_PRECHARGE_SEQUENCE
 **NAME:** Tc 08 Bms Hv Precharge Sequence
+**ANFORDERUNG:** REQ_BMS_HV_PRECHARGE_001
 
 ## Precondition
 10. Zündung an

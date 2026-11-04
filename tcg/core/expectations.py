@@ -16,7 +16,7 @@ def collect_step_numbers(rows):
         s_num = data.get('Schritt')
         if s_num is not None:
             steps.add(s_num)
-        if item_type == 'loop':
+        if item_type in ('loop', 'while'):
             steps.update(collect_step_numbers(data.get('body', [])))
         elif item_type == 'if':
             for b_step, _, b_body in data.get('branches', []):
@@ -56,8 +56,8 @@ def index_action_tree(flow_rows, test_id, source_file):
                         f'in Action tree (first defined at line {prev_line})'
                     )
                 indexed[s_num] = {'line': line, 'type': item_type, 'data': data, 'path': path}
-            if item_type == 'loop':
-                _traverse(data.get('body', []), path + (f"loop_{s_num or 'anon'}",))
+            if item_type in ('loop', 'while'):
+                _traverse(data.get('body', []), path + (f"{item_type}_{s_num or 'anon'}",))
             elif item_type == 'if':
                 for b_idx, (b_step, b_cond, b_body) in enumerate(data.get('branches', [])):
                     _traverse(b_body, path + (f"if_{s_num or 'anon'}_b{b_idx}",))

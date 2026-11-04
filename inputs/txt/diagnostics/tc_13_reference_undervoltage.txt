@@ -1,5 +1,6 @@
 TESTFALL: TC_UNDERVOLTAGE_REFERENCE
 NAME: Unterspannung mit Fehlerspeicherprüfung
+ANFORDERUNG: REQ_DIAG_REF_UNDERVOLTAGE_001
 
 Precondition
 10. Zündung an

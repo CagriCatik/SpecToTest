@@ -1,5 +1,6 @@
 # TESTFALL: TC_10_BMS_THERMAL_DERATING_SWEEP
 **NAME:** Tc 10 Bms Thermal Derating Sweep
+**ANFORDERUNG:** REQ_BMS_THERMAL_DERATING_001
 
 ## Precondition
 10. Zündung an

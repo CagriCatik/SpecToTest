@@ -1,5 +1,6 @@
 # TESTFALL: TC_03_DIAGNOSTIC_POWERCYCLE
 **NAME:** Tc 03 Diagnostic Powercycle
+**ANFORDERUNG:** REQ_DIAG_POWERCYCLE_001
 
 ## Precondition
 10. Zündung an

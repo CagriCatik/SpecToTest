@@ -8,6 +8,8 @@ import operations.ignition as _op_ignition
 def run_tc_11_bms_isolation_monitoring(bench):
     """Original Test Specification:
     ========================================================================
+    Requirement: REQ_BMS_ISO_MONITOR_001
+    
     Precondition
     10. Zündung an
     20. CAN-Signal Clamp15Status auf 1 setzen

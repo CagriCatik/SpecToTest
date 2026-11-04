@@ -7,6 +7,8 @@ import operations.timing as _op_timing
 def run_tc_02_hmi_loop_verification(bench):
     """Original Test Specification:
     ========================================================================
+    Requirement: REQ_HMI_DISPLAY_LOOP_001
+    
     Precondition
     10. Bildschirm HOME auswählen
     20. Parameter GAIN auf 0 schreiben

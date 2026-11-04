@@ -1,5 +1,6 @@
 # TESTFALL: TC_01_UNDERVOLTAGE_RECOVERY
 **NAME:** Tc 01 Undervoltage Recovery
+**ANFORDERUNG:** REQ_DIAG_UNDERVOLTAGE_001
 
 ## Precondition
 10. Zündung an

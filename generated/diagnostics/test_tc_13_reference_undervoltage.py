@@ -9,6 +9,8 @@ import operations.timing as _op_timing
 def run_tc_undervoltage_reference(bench):
     """Original Test Specification:
     ========================================================================
+    Requirement: REQ_DIAG_REF_UNDERVOLTAGE_001
+    
     Precondition
     10. Zündung an
     20. Fehlerspeicher BCM1 löschen

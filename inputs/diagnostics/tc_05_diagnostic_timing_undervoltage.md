@@ -1,5 +1,6 @@
 # TESTFALL: TC_05_DIAGNOSTIC_TIMING_UNDERVOLTAGE
 **NAME:** Tc 05 Diagnostic Timing Undervoltage
+**ANFORDERUNG:** REQ_DIAG_TIMING_001
 
 ## Precondition
 10. Zündung an

@@ -9,6 +9,8 @@ import operations.timing as _op_timing
 def run_tc_14_control_flow_branching(bench):
     """Original Test Specification:
     ========================================================================
+    Requirement: REQ_BMS_CONTROL_FLOW_001
+    
     Precondition
     10. Zündung an
     20. CAN-Signal Clamp15Status auf 1 setzen
@@ -25,8 +27,7 @@ def run_tc_14_control_flow_branching(bench):
     90. CAN-Signal CellTempMax ist 60 °C
     90. CAN-Signal CoolingRequest ist 2
     90. CAN-Signal MaxDischargeCurrent ist 100 A
-    300. Fehlerspeicher BMS lesen
-    300. Fehlerspeichereintrag DTC_BMS_OVERTEMPERATURE in BMS eingetragen
+    300: FOR (retry;[1])
     
     Postcondition
     310. CAN-Signal CellTempMax auf 25 °C setzen
@@ -95,14 +96,14 @@ def run_tc_14_control_flow_branching(bench):
                     _op_can.set_can_signal(bench, signal='CoolingRequest', value=Decimal('2'))
                     # 190. CAN-Signal CoolingRequest ist 2
                     _op_can.expect_can_signal(bench, signal='CoolingRequest', value=Decimal('2'))
-            # 210: IF (mode == 1)
-            if mode == 1:
+            # 210: IF ((mode == 1 and mode < 2))
+            if (mode == 1 and mode < 2):
                 # 220. CAN-Signal MaxDischargeCurrent auf 400 A setzen
                 _op_can.set_can_signal(bench, signal='MaxDischargeCurrent', value=Decimal('400'))
                 # 220. CAN-Signal MaxDischargeCurrent ist 400 A
                 _op_can.expect_can_signal(bench, signal='MaxDischargeCurrent', value=Decimal('400'))
-            # 230: ELIF (mode == 2)
-            elif mode == 2:
+            # 230: ELIF ((mode == 2 or mode == 99))
+            elif (mode == 2 or mode == 99):
                 # 240. CAN-Signal MaxDischargeCurrent auf 250 A setzen
                 _op_can.set_can_signal(bench, signal='MaxDischargeCurrent', value=Decimal('250'))
                 # 240. CAN-Signal MaxDischargeCurrent ist 250 A
@@ -121,10 +122,17 @@ def run_tc_14_control_flow_branching(bench):
         _op_can.expect_can_signal(bench, signal='CoolingRequest', value=Decimal('2'))
         # 90. CAN-Signal MaxDischargeCurrent ist 100 A
         _op_can.expect_can_signal(bench, signal='MaxDischargeCurrent', value=Decimal('100'))
-        # 300. Fehlerspeicher BMS lesen
-        _op_diagnostic.read_fault_memory(bench, ecu='BMS')
-        # 300. Fehlerspeichereintrag DTC_BMS_OVERTEMPERATURE in BMS eingetragen
-        _op_diagnostic.expect_fault_memory_entry(bench, code='DTC_BMS_OVERTEMPERATURE', ecu='BMS')
+        # 300: FOR (retry;[1])
+        for retry in [1]:
+            # 301: WHILE (retry <= 1)
+            while retry <= 1:
+                # 302. Fehlerspeicher BMS lesen
+                _op_diagnostic.read_fault_memory(bench, ecu='BMS')
+                # 302. Fehlerspeichereintrag DTC_BMS_OVERTEMPERATURE in BMS eingetragen
+                _op_diagnostic.expect_fault_memory_entry(bench, code='DTC_BMS_OVERTEMPERATURE', ecu='BMS')
+                # 303: BREAK (retry == 1)
+                if retry == 1:
+                    break
     finally:
         # --- Postcondition (Cleanup) ---
         # 310. CAN-Signal CellTempMax auf 25 °C setzen

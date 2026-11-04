@@ -8,6 +8,8 @@ import operations.supply as _op_supply
 def run_tc_05_diagnostic_timing_undervoltage(bench):
     """Original Test Specification:
     ========================================================================
+    Requirement: REQ_DIAG_TIMING_001
+    
     Precondition
     10. Zündung an
     20. Versorgung auf 13.5 V setzen

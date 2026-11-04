@@ -10,6 +10,8 @@ import operations.timing as _op_timing
 def run_tc_07_controldesk_hil_simulation(bench):
     """Original Test Specification:
     ========================================================================
+    Requirement: REQ_HIL_SIM_CONTROL_001
+    
     Precondition
     10. Zündung an
     20. Versorgung auf 13.5 V setzen

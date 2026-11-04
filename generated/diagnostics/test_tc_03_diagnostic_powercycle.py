@@ -9,6 +9,8 @@ import operations.timing as _op_timing
 def run_tc_03_diagnostic_powercycle(bench):
     """Original Test Specification:
     ========================================================================
+    Requirement: REQ_DIAG_POWERCYCLE_001
+    
     Precondition
     10. Zündung an
     20. Fehlerspeicher BCM löschen

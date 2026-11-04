@@ -1,5 +1,6 @@
 # TESTFALL: TC_12_BMS_SIGNAL_TOLERANCES_AND_RANGES
 **NAME:** Tc 12 Bms Signal Tolerances And Ranges
+**ANFORDERUNG:** REQ_BMS_TOLERANCE_001
 
 ## Precondition
 10. Zündung an

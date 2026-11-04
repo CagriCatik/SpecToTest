@@ -38,11 +38,13 @@ Wird kein expliziter Header angegeben, leitet SpecToTest die Testfall-ID automat
 ```text
 # TESTFALL: TC_01_UNDERVOLTAGE_RECOVERY
 NAME: Unterspannung und autonomer Wiederanlauf
+ANFORDERUNG: REQ_DIAG_UNDERVOLTAGE_001
 TESTZIEL: Nachweis, dass das Steuergerät nach einem Spannungseinbruch fehlerfrei wieder anläuft.
 ```
 
 - **`TESTFALL:`** Eindeutige Kennung (muss dem Muster `TC_[A-Z0-9_]{1,60}` entsprechen).
 - **`NAME:`** Menschenlesbare Bezeichnung des Tests.
+- **`ANFORDERUNG:`** (oder `REQUIREMENT:` / `**ANFORDERUNG:**`): Anforderungskennung für lückenlose Traceability (z. B. zu Polarion, DOORS oder Jira).
 - **`TESTZIEL:`** Fachliche Kurzbeschreibung des Ziels (optional).
 
 ### C. Mehrere Testfälle in einer Datei
@@ -127,10 +129,29 @@ Mit optionaler Schrittnummerierung und `BREAK`:
 END FOR
 ```
 
-`BREAK` kann ohne Bedingung (`BREAK`) oder mit Bedingung (`BREAK (<bedingung>)`) aufgerufen werden. `BREAK` darf überall innerhalb einer `FOR`-Schleife platziert werden, auch tief verschachtelt innerhalb von `IF`- oder `SWITCH`-Blöcken.
+`BREAK` kann ohne Bedingung (`BREAK`) oder mit Bedingung (`BREAK (<bedingung>)`) aufgerufen werden. `BREAK` darf überall innerhalb einer `FOR`- oder `WHILE`-Schleife platziert werden, auch tief verschachtelt innerhalb von `IF`- oder `SWITCH`-Blöcken.
 
-### B. Bedingte Verzweigungen (`IF` / `ELSE IF` / `ELSE` / `END IF`)
-Verzweigungen ermöglichen die bedingte Ausführung von Testschritten basierend auf Schleifenvariablen:
+### B. Bedingte Schleifen (`WHILE` / `END WHILE`)
+`WHILE`-Schleifen führen Anweisungen solange aus, wie die angegebene Bedingung wahr ist:
+```text
+WHILE (<bedingung>)
+    <anweisungen>
+END WHILE
+```
+
+Mit Schrittnummerierung und `BREAK`:
+```text
+10: FOR (retry; [1])
+    20: WHILE (retry <= 3)
+        21. Fehlerspeicher BMS lesen
+        22: BREAK (retry == 2)
+    23: END WHILE
+24: END FOR
+```
+`WHILE`-Schleifen werden deterministisch in native Python-`while <cond>:`-Blöcke überführt und unterliegen der gleichen strikten Scoping- und Block-Validierung.
+
+### C. Bedingte Verzweigungen (`IF` / `ELSE IF` / `ELSE` / `END IF`)
+Verzweigungen ermöglichen die bedingte Ausführung von Testschritten basierend auf Variablen:
 ```text
 IF (<bedingung>)
     <anweisungen>
@@ -141,12 +162,12 @@ ELSE
 END IF
 ```
 
-Beispiel:
+Beispiel mit zusammengesetzten Bedingungen:
 ```text
 10: FOR (temp; [25, 45, 65])
-    20: IF (temp < 30)
+    20: IF (temp >= 20 AND temp < 30)
         21. CAN-Signal CoolingRequest auf 0 setzen
-    22: ELSE IF (temp == 45)
+    22: ELSE IF (temp == 45 OR temp == 50)
         23. CAN-Signal CoolingRequest auf 1 setzen
     24: ELSE
         25. CAN-Signal CoolingRequest auf 2 setzen
@@ -154,13 +175,13 @@ Beispiel:
 27: END FOR
 ```
 
-**Vergleichsoperatoren in Bedingungen:**
-- `==` (Gleichheit), `!=` (Ungleichheit)
-- `<`, `<=` (Kleiner / Kleiner-Gleich)
-- `>`, `>=` (Größer / Größer-Gleich)
-- Werte können Zahlen (`45`), Gleitkommazahlen/Spannungen (`13.5`), Strings (`"DriveReady"`) oder Booleans (`True`/`False`) sein.
+**Bedingungsoperatoren & Logische Verknüpfungen:**
+- **Vergleiche:** `==` (Gleichheit), `!=` (Ungleichheit), `<`, `<=` (Kleiner / Kleiner-Gleich), `>`, `>=` (Größer / Größer-Gleich).
+- **Logische Operatoren:** `AND` bzw. `&&` (logisches UND), `OR` bzw. `||` (logisches ODER).
+- **Klammerung:** Beliebig tiefe Klammerung zur Steuerung der Auswertungsreihenfolge, z. B. `((mode == 1 AND temp < 30) OR override == 1)`. Die Standard-Präzedenz (`AND` bindet stärker als `OR`) wird eingehalten.
+- **Werte:** Ganze Zahlen (`45`), Dezimalzahlen/Spannungen (`13.5`), Strings (`"DriveReady"`), Booleans (`True`/`False`) oder Variablen.
 
-### C. Mehrfachauswahl (`SWITCH` / `CASE` / `DEFAULT` / `END SWITCH`)
+### D. Mehrfachauswahl (`SWITCH` / `CASE` / `DEFAULT` / `END SWITCH`)
 Für mehrstufige Fallunterscheidungen steht das `SWITCH`-Konstrukt zur Verfügung, das deterministisch in moderne Python-`match ... case:`-Strukturen übersetzt wird:
 ```text
 SWITCH (<variable>)
@@ -190,16 +211,16 @@ Beispiel:
 31: END FOR
 ```
 
-### D. Scoping- und Lebenszyklusregeln
-1. **Gültigkeitsbereich:** Schleifenvariablen (z. B. `temp` oder `mode`) existieren ausschließlich innerhalb des jeweiligen Blocks zwischen `FOR` und `END FOR`.
+### E. Scoping- und Lebenszyklusregeln
+1. **Gültigkeitsbereich:** Schleifenvariablen (z. B. `temp` oder `mode`) existieren ausschließlich innerhalb des jeweiligen Blocks zwischen `FOR` und `END FOR`. In `WHILE`-Schleifen und `IF`-Verzweigungen können alle im übergeordneten Gültigkeitsbereich definierten Variablen geprüft werden.
 2. **Schutz vor Überstrahlung:** Nach `END FOR` oder in unnummerierten Erwartungen führt der Zugriff auf eine Schleifenvariable zu einem `SpecError: variable '<var>' in IF condition is undefined; in scope: [...]`.
 3. **Strenge Block-Integrität:**
    - Ein `CASE` oder `DEFAULT` ist nur innerhalb von `SWITCH` erlaubt.
    - `CASE` nach `DEFAULT` wird vom Compiler strikt abgelehnt.
    - Befehle direkt in `SWITCH` außerhalb von `CASE` oder `DEFAULT` führen zu einem Syntaxfehler.
    - Ein `ELSE` oder `ELSE IF` ist nur innerhalb von `IF` erlaubt; `ELSE IF` nach `ELSE` ist unzulässig.
-   - Unvollständig geschlossene Blöcke (z. B. fehlendes `END IF` vor `END FOR` oder vor dem nächsten Abschnitt) werden mit präziser Zeilenangabe beanstandet.
-4. **Verschachtelung:** `FOR`, `IF` und `SWITCH` können beliebig tief ineinander geschachtelt werden. Innerhalb geschachtelter Blöcke bleiben die Variablen aller übergeordneten Schleifen sichtbar.
+   - Unvollständig geschlossene Blöcke (z. B. fehlendes `END IF` oder `END WHILE` vor `END FOR` oder vor dem nächsten Abschnitt) werden mit präziser Zeilenangabe beanstandet.
+4. **Verschachtelung:** `FOR`, `WHILE`, `IF` und `SWITCH` können beliebig tief ineinander geschachtelt werden. Innerhalb geschachtelter Blöcke bleiben die Variablen aller übergeordneten Schleifen sichtbar.
 
 ---
 

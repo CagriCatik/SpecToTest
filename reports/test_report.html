@@ -238,7 +238,7 @@
         <div class="meta-bar" style="margin-top: 6px;">
           <span>Prüfstands-Adapter: <strong>DummyBench (Simulation)</strong></span>
           <span>•</span>
-          <span>Generiert am: <strong>04.11.2026 21:09:41</strong></span>
+          <span>Generiert am: <strong>04.11.2026 22:37:33</strong></span>
           <span>•</span>
           <span>Gesamtdauer: <strong>0.001 s</strong></span>
         </div>
@@ -313,6 +313,8 @@
         <div class="section-title">Original-Spezifikation (.md / .txt)</div>
         <pre class="spec-box">Original Test Specification:
 ========================================================================
+Requirement: REQ_BMS_HV_PRECHARGE_001
+
 Precondition
 10. Zündung an
 20. CAN-Signal Clamp15Status auf 1 setzen
@@ -385,6 +387,8 @@ Postcondition
         <div class="section-title">Original-Spezifikation (.md / .txt)</div>
         <pre class="spec-box">Original Test Specification:
 ========================================================================
+Requirement: REQ_BMS_CELL_OVP_001
+
 Precondition
 10. Zündung an
 20. CAN-Signal Clamp15Status auf 1 setzen
@@ -454,6 +458,8 @@ Postcondition
         <div class="section-title">Original-Spezifikation (.md / .txt)</div>
         <pre class="spec-box">Original Test Specification:
 ========================================================================
+Requirement: REQ_BMS_THERMAL_DERATING_001
+
 Precondition
 10. Zündung an
 20. CAN-Signal Clamp15Status auf 1 setzen
@@ -514,6 +520,8 @@ Postcondition
         <div class="section-title">Original-Spezifikation (.md / .txt)</div>
         <pre class="spec-box">Original Test Specification:
 ========================================================================
+Requirement: REQ_BMS_ISO_MONITOR_001
+
 Precondition
 10. Zündung an
 20. CAN-Signal Clamp15Status auf 1 setzen
@@ -573,6 +581,8 @@ Postcondition
         <div class="section-title">Original-Spezifikation (.md / .txt)</div>
         <pre class="spec-box">Original Test Specification:
 ========================================================================
+Requirement: REQ_BMS_TOLERANCE_001
+
 Precondition
 10. Zündung an
 20. CAN-Signal Clamp15Status auf 1 setzen
@@ -634,6 +644,8 @@ Postcondition
         <div class="section-title">Original-Spezifikation (.md / .txt)</div>
         <pre class="spec-box">Original Test Specification:
 ========================================================================
+Requirement: REQ_BMS_CONTROL_FLOW_001
+
 Precondition
 10. Zündung an
 20. CAN-Signal Clamp15Status auf 1 setzen
@@ -650,8 +662,7 @@ Action
 90. CAN-Signal CellTempMax ist 60 °C
 90. CAN-Signal CoolingRequest ist 2
 90. CAN-Signal MaxDischargeCurrent ist 100 A
-300. Fehlerspeicher BMS lesen
-300. Fehlerspeichereintrag DTC_BMS_OVERTEMPERATURE in BMS eingetragen
+300: FOR (retry;[1])
 
 Postcondition
 310. CAN-Signal CellTempMax auf 25 °C setzen
@@ -697,6 +708,8 @@ Postcondition
         <div class="section-title">Original-Spezifikation (.md / .txt)</div>
         <pre class="spec-box">Original Test Specification:
 ========================================================================
+Requirement: REQ_CAN_SIGNAL_TX_001
+
 Precondition
 10. Zündung an
 20. CAN-Signal Clamp15Status auf 1 setzen
@@ -751,6 +764,8 @@ Postcondition
         <div class="section-title">Original-Spezifikation (.md / .txt)</div>
         <pre class="spec-box">Original Test Specification:
 ========================================================================
+Requirement: REQ_DIAG_UNDERVOLTAGE_001
+
 Precondition
 10. Zündung an
 20. Fehlerspeicher BCM1 löschen
@@ -804,6 +819,8 @@ Postcondition
         <div class="section-title">Original-Spezifikation (.md / .txt)</div>
         <pre class="spec-box">Original Test Specification:
 ========================================================================
+Requirement: REQ_DIAG_POWERCYCLE_001
+
 Precondition
 10. Zündung an
 20. Fehlerspeicher BCM löschen
@@ -859,6 +876,8 @@ END FOR
         <div class="section-title">Original-Spezifikation (.md / .txt)</div>
         <pre class="spec-box">Original Test Specification:
 ========================================================================
+Requirement: REQ_DIAG_TIMING_001
+
 Precondition
 10. Zündung an
 20. Versorgung auf 13.5 V setzen
@@ -912,6 +931,8 @@ Postcondition
         <div class="section-title">Original-Spezifikation (.md / .txt)</div>
         <pre class="spec-box">Original Test Specification:
 ========================================================================
+Requirement: REQ_DIAG_REF_UNDERVOLTAGE_001
+
 Precondition
 10. Zündung an
 20. Fehlerspeicher BCM1 löschen
@@ -963,6 +984,8 @@ Postcondition
         <div class="section-title">Original-Spezifikation (.md / .txt)</div>
         <pre class="spec-box">Original Test Specification:
 ========================================================================
+Requirement: REQ_HIL_SIM_CONTROL_001
+
 Precondition
 10. Zündung an
 20. Versorgung auf 13.5 V setzen
@@ -1020,6 +1043,8 @@ Postcondition
         <div class="section-title">Original-Spezifikation (.md / .txt)</div>
         <pre class="spec-box">Original Test Specification:
 ========================================================================
+Requirement: REQ_HMI_DISPLAY_LOOP_001
+
 Precondition
 10. Bildschirm HOME auswählen
 20. Parameter GAIN auf 0 schreiben
@@ -1070,6 +1095,8 @@ Postcondition
         <div class="section-title">Original-Spezifikation (.md / .txt)</div>
         <pre class="spec-box">Original Test Specification:
 ========================================================================
+Requirement: REQ_LIMITS_SWEEP_001
+
 Precondition
 10. Bildschirm HOME auswählen
 20. Parameter LIMIT auf 0 schreiben

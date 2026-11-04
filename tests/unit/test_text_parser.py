@@ -96,6 +96,45 @@ class TextParserUnitTests(BaseTestCase):
             res = ns['RUNNERS']['TC_MARKDOWN_DEMO'](bench)
             self.assertEqual(res.result, 'PASS')
 
+    def test_requirement_header_parsing(self):
+        txt_spec = """TESTFALL: TC_REQ_TEST
+NAME: Requirement Parsing Test
+ANFORDERUNG: REQ_DIAG_12345
+
+Precondition
+10. Zündung an
+
+Action
+20. Batteriespannung = 13.8V
+
+Postcondition
+30. Zündung aus
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            p = Path(directory) / 'req.txt'
+            p.write_text(txt_spec, encoding='utf-8')
+            cases = compile_cases(read_text_spec(p), self.mappings, self.profile, p.name)
+            self.assertEqual(cases[0].requirement, 'REQ_DIAG_12345')
+
+        md_spec = """# TESTFALL: TC_REQ_MD
+**NAME:** Requirement MD
+**ANFORDERUNG:** REQ_MD_99999
+
+## Precondition
+10. Zündung an
+
+## Action
+20. Batteriespannung = 13.8V
+
+## Postcondition
+30. Zündung aus
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            p = Path(directory) / 'req.md'
+            p.write_text(md_spec, encoding='utf-8')
+            cases = compile_cases(read_text_spec(p), self.mappings, self.profile, p.name)
+            self.assertEqual(cases[0].requirement, 'REQ_MD_99999')
+
 
 if __name__ == '__main__':
     unittest.main()

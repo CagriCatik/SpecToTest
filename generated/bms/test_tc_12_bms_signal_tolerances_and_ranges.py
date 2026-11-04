@@ -7,6 +7,8 @@ import operations.ignition as _op_ignition
 def run_tc_12_bms_signal_tolerances_and_ranges(bench):
     """Original Test Specification:
     ========================================================================
+    Requirement: REQ_BMS_TOLERANCE_001
+    
     Precondition
     10. Zündung an
     20. CAN-Signal Clamp15Status auf 1 setzen

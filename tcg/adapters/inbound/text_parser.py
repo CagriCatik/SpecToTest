@@ -3,7 +3,7 @@ from decimal import Decimal
 from pathlib import Path
 import re
 
-from tcg.core.model import BinaryCondition, SpecError, VariableRef
+from tcg.core.model import BinaryCondition, CompoundCondition, SpecError, VariableRef
 from tcg.ports.specification import SpecificationParserPort
 
 SPEC_SECTIONS = ('Testfaelle', 'Vorbedingungen', 'Ablauf', 'Nachbedingungen', 'Erwartungen')
@@ -35,6 +35,8 @@ SECTION_HEADING = re.compile(
 
 FOR_LOOP = re.compile(r'^(?:([0-9]+)[.:]\s*)?FOR\s*\(\s*([A-Za-z_]\w*)\s*;\s*\[([^\]]*)\]\s*\)$', re.IGNORECASE)
 END_FOR = re.compile(r'^(?:([0-9]+)[.:]\s*)?END\s+FOR$', re.IGNORECASE)
+WHILE_LOOP = re.compile(r'^(?:([0-9]+)[.:]\s*)?WHILE\s*\(\s*(.+?)\s*\)$', re.IGNORECASE)
+END_WHILE = re.compile(r'^(?:([0-9]+)[.:]\s*)?END\s+WHILE$', re.IGNORECASE)
 BREAK_CMD = re.compile(r'^(?:([0-9]+)[.:]\s*)?BREAK(?:\s*\(\s*(.+?)\s*\))?$', re.IGNORECASE)
 
 IF_CMD = re.compile(r'^(?:([0-9]+)[.:]\s*)?IF\s*\(\s*(.+?)\s*\)$', re.IGNORECASE)
@@ -175,11 +177,107 @@ def _parse_items(raw_items, path, line_number):
     return tuple(items)
 
 
+def _split_top_level_ops(text, op_names):
+    parts = []
+    current = []
+    depth = 0
+    in_quote = False
+    quote_char = None
+    i = 0
+    n = len(text)
+    matched_op = None
+    while i < n:
+        c = text[i]
+        if in_quote:
+            current.append(c)
+            if c == quote_char:
+                in_quote = False
+            i += 1
+            continue
+        if c in ('"', "'"):
+            in_quote = True
+            quote_char = c
+            current.append(c)
+            i += 1
+            continue
+        if c == '(':
+            depth += 1
+            current.append(c)
+            i += 1
+            continue
+        if c == ')':
+            depth -= 1
+            current.append(c)
+            i += 1
+            continue
+        if depth == 0:
+            found_op = None
+            for op in op_names:
+                if op.isalpha():
+                    if text[i:i+len(op)].upper() == op.upper():
+                        before_ok = (i == 0 or text[i-1].isspace() or text[i-1] in '()')
+                        after_idx = i + len(op)
+                        after_ok = (after_idx == n or text[after_idx].isspace() or text[after_idx] in '()')
+                        if before_ok and after_ok:
+                            found_op = 'or' if op.upper() == 'OR' else 'and'
+                            i += len(op)
+                            break
+                elif text[i:i+len(op)] == op:
+                    found_op = 'or' if op == '||' else 'and'
+                    i += len(op)
+                    break
+            if found_op:
+                parts.append(''.join(current).strip())
+                current = []
+                matched_op = found_op
+                continue
+        current.append(c)
+        i += 1
+    if parts:
+        parts.append(''.join(current).strip())
+        return parts, matched_op
+    return None, None
+
+
+def _is_enclosed_in_parens(text):
+    if not (text.startswith('(') and text.endswith(')')):
+        return False
+    depth = 0
+    for c in text[:-1]:
+        if c == '(':
+            depth += 1
+        elif c == ')':
+            depth -= 1
+            if depth == 0:
+                return False
+    return depth == 1
+
+
 def _parse_condition(raw_cond, path, line_number):
     text = raw_cond.strip()
+    if _is_enclosed_in_parens(text):
+        return _parse_condition(text[1:-1], path, line_number)
+
+    # 1. OR split (lowest precedence)
+    parts, op = _split_top_level_ops(text, ('OR', '||'))
+    if parts:
+        res = _parse_condition(parts[0], path, line_number)
+        for p in parts[1:]:
+            res = CompoundCondition(res, 'or', _parse_condition(p, path, line_number))
+        return res
+
+    # 2. AND split (higher precedence than OR)
+    parts, op = _split_top_level_ops(text, ('AND', '&&'))
+    if parts:
+        res = _parse_condition(parts[0], path, line_number)
+        for p in parts[1:]:
+            res = CompoundCondition(res, 'and', _parse_condition(p, path, line_number))
+        return res
+
+    # 3. Atomic binary condition
     match = re.fullmatch(r'([A-Za-z_]\w*)\s*(==|!=|<=|>=|<|>)\s*(.+)', text)
     if not match:
-        _error(path, line_number, f'invalid BREAK condition {text!r}')
+        _error(path, line_number, f'invalid condition {text!r}')
     left = match[1]
     op = match[2]
     right_str = match[3].strip()
@@ -250,7 +348,8 @@ def parse_text_lines(raw_lines, source_name='test_spec.txt'):
             sections['Testfaelle'].append((case['line'], {
                 'Test_ID': case['id'],
                 'Name': case['name'],
-                'Testziel': case['objective'],
+                'Testziel': case.get('objective'),
+                'Anforderung': case.get('requirement'),
             }))
             case['stored'] = True
 
@@ -260,7 +359,7 @@ def parse_text_lines(raw_lines, source_name='test_spec.txt'):
             return
         if block_stack:
             top = block_stack[-1]['type']
-            name = "FOR loop" if top == "loop" else f"{top.upper()} block"
+            name = "WHILE loop" if top == "while" else ("FOR loop" if top == "loop" else f"{top.upper()} block")
             _error(source_file, line_number, f'{case["id"]}: unclosed {name}')
         add_metadata()
         case = None
@@ -273,7 +372,7 @@ def parse_text_lines(raw_lines, source_name='test_spec.txt'):
             stem_id = re.sub(r'[^A-Z0-9_]', '_', raw_stem)
             case_id = stem_id if stem_id.startswith('TC_') else f'TC_{stem_id}'
             case = {'id': case_id, 'line': line_number, 'name': source_stem,
-                    'objective': None, 'stored': False}
+                    'objective': None, 'requirement': None, 'stored': False}
             add_metadata()
             state = 'SECTION_BODY'
 
@@ -300,7 +399,7 @@ def parse_text_lines(raw_lines, source_name='test_spec.txt'):
         is_md_heading = False
         if line.startswith('#'):
             candidate = line.lstrip('#').strip()
-            match_cand = re.match(r'^\*{0,2}(TESTFALL|NAME|TESTZIEL)\*{0,2}:\*{0,2}\s*(.+)$', candidate, re.IGNORECASE)
+            match_cand = re.match(r'^\*{0,2}(TESTFALL|NAME|TESTZIEL|OBJECTIVE|ANFORDERUNG|REQUIREMENT)\*{0,2}:\*{0,2}\s*(.+)$', candidate, re.IGNORECASE)
             if match_cand:
                 field = match_cand.group(1).upper()
                 val = match_cand.group(2).strip().strip('*').strip()
@@ -315,7 +414,7 @@ def parse_text_lines(raw_lines, source_name='test_spec.txt'):
             line = line[2:].strip()
 
         # Normalize markdown bold on header metadata: **TESTFALL:** -> TESTFALL:
-        match_hdr = re.match(r'^\*{0,2}(TESTFALL|NAME|TESTZIEL)\*{0,2}:\*{0,2}\s*(.+)$', line, re.IGNORECASE)
+        match_hdr = re.match(r'^\*{0,2}(TESTFALL|NAME|TESTZIEL|OBJECTIVE|ANFORDERUNG|REQUIREMENT)\*{0,2}:\*{0,2}\s*(.+)$', line, re.IGNORECASE)
         if match_hdr:
             field = match_hdr.group(1).upper()
             val = match_hdr.group(2).strip().strip('*').strip()
@@ -326,7 +425,7 @@ def parse_text_lines(raw_lines, source_name='test_spec.txt'):
                 close_case(line_number)
             test_id = _field(line, 'TESTFALL:', source_file, line_number)
             case = {'id': test_id, 'line': line_number, 'name': None,
-                    'objective': None, 'stored': False}
+                    'objective': None, 'requirement': None, 'stored': False}
             sequence = {'Vorbedingungen': 0, 'Nachbedingungen': 0}
             block_stack = []
             current_section = None
@@ -335,13 +434,17 @@ def parse_text_lines(raw_lines, source_name='test_spec.txt'):
 
         if state == 'NAME':
             case['name'] = _field(line, 'NAME:', source_file, line_number)
-            state = 'OPTIONAL_OBJECTIVE'
+            state = 'HEADER_EXTRAS'
             continue
 
-        if state == 'OPTIONAL_OBJECTIVE':
-            if line.startswith('TESTZIEL:'):
-                case['objective'] = _field(line, 'TESTZIEL:', source_file, line_number)
-                state = 'EXPECTING_SECTION'
+        if state == 'HEADER_EXTRAS':
+            if line.startswith(('TESTZIEL:', 'OBJECTIVE:')):
+                prefix = 'TESTZIEL:' if line.startswith('TESTZIEL:') else 'OBJECTIVE:'
+                case['objective'] = _field(line, prefix, source_file, line_number)
+                continue
+            if line.startswith(('ANFORDERUNG:', 'REQUIREMENT:')):
+                prefix = 'ANFORDERUNG:' if line.startswith('ANFORDERUNG:') else 'REQUIREMENT:'
+                case['requirement'] = _field(line, prefix, source_file, line_number)
                 continue
             state = 'EXPECTING_SECTION'
 
@@ -349,7 +452,7 @@ def parse_text_lines(raw_lines, source_name='test_spec.txt'):
         if match_section:
             if block_stack:
                 top = block_stack[-1]['type']
-                name = "FOR loop" if top == "loop" else f"{top.upper()} block"
+                name = "WHILE loop" if top == "while" else ("FOR loop" if top == "loop" else f"{top.upper()} block")
                 _error(source_file, line_number, f'unclosed {name} before section {line!r}')
             ensure_case(line_number)
             sec_name = match_section.group(1).lower().rstrip(':')
@@ -389,6 +492,33 @@ def parse_text_lines(raw_lines, source_name='test_spec.txt'):
                 _error(source_file, line_number, 'unexpected END FOR without active FOR loop')
             if block_stack[-1]['type'] != 'loop':
                 _error(source_file, line_number, f"unclosed {block_stack[-1]['type'].upper()} block before END FOR")
+            block_stack.pop()
+            continue
+
+        # Parse WHILE
+        match_while = WHILE_LOOP.match(line)
+        if match_while:
+            step_num = int(match_while[1]) if match_while[1] else None
+            cond = _parse_condition(match_while[2], source_file, line_number)
+            while_body = []
+            while_data = {
+                'Test_ID': case['id'],
+                'Schritt': step_num,
+                'type': 'while',
+                'condition': cond,
+                'body': while_body,
+            }
+            current_target(line_number).append((line_number, while_data))
+            block_stack.append({'type': 'while', 'data': while_data, 'active_body': while_body})
+            continue
+
+        # Parse END WHILE
+        match_end_while = END_WHILE.match(line)
+        if match_end_while:
+            if not block_stack:
+                _error(source_file, line_number, 'unexpected END WHILE without active WHILE loop')
+            if block_stack[-1]['type'] != 'while':
+                _error(source_file, line_number, f"unclosed {block_stack[-1]['type'].upper()} block before END WHILE")
             block_stack.pop()
             continue
 
@@ -501,9 +631,9 @@ def parse_text_lines(raw_lines, source_name='test_spec.txt'):
         # Parse BREAK
         match_break = BREAK_CMD.match(line)
         if match_break:
-            has_loop = any(b['type'] == 'loop' for b in block_stack)
+            has_loop = any(b['type'] in ('loop', 'while') for b in block_stack)
             if not has_loop:
-                _error(source_file, line_number, 'BREAK statement occurs outside of any FOR loop')
+                _error(source_file, line_number, 'BREAK statement occurs outside of any FOR loop or WHILE loop')
             step_num = int(match_break[1]) if match_break[1] else None
             cond = _parse_condition(match_break[2], source_file, line_number) if match_break[2] else None
             break_data = {

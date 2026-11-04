@@ -1,5 +1,6 @@
 # TESTFALL: TC_11_BMS_ISOLATION_MONITORING
 **NAME:** Tc 11 Bms Isolation Monitoring
+**ANFORDERUNG:** REQ_BMS_ISO_MONITOR_001
 
 ## Precondition
 10. Zündung an

@@ -9,6 +9,8 @@ import operations.timing as _op_timing
 def run_tc_08_bms_hv_precharge_sequence(bench):
     """Original Test Specification:
     ========================================================================
+    Requirement: REQ_BMS_HV_PRECHARGE_001
+    
     Precondition
     10. Zündung an
     20. CAN-Signal Clamp15Status auf 1 setzen

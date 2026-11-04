@@ -14,6 +14,7 @@ from tcg.core.model import (
     Step,
     SwitchBlock,
     VariableRef,
+    WhileLoop,
 )
 from tcg.ports.emitter import CodeEmitterPort
 
@@ -87,6 +88,16 @@ def _render_statement(stmt, aliases, indent='    '):
         body_indent = indent + '    '
         for body_item in stmt.body:
             lines.extend(_render_statement(body_item, aliases, indent=body_indent))
+    elif isinstance(stmt, WhileLoop):
+        step_lbl = f'{stmt.step_label}: ' if stmt.step_label is not None else ''
+        lines.append(f'{indent}# {step_lbl}WHILE ({stmt.condition.render()})')
+        lines.append(f'{indent}while {stmt.condition.render()}:')
+        body_indent = indent + '    '
+        if not stmt.body:
+            lines.append(f'{body_indent}pass')
+        else:
+            for body_item in stmt.body:
+                lines.extend(_render_statement(body_item, aliases, indent=body_indent))
     elif isinstance(stmt, BreakStatement):
         b_lbl = f'{stmt.step_label}: ' if stmt.step_label is not None else ''
         if stmt.condition is not None:
@@ -158,6 +169,20 @@ def _render_cleanup_statement(stmt, aliases, indent='        '):
             lines.extend(_render_cleanup_statement(body_item, aliases, indent=body_indent))
         lines.append(f'{indent}except Exception as _cln_err:')
         lines.append(f'{indent}    cleanup_errors.append(_cln_err)')
+    elif isinstance(stmt, WhileLoop):
+        lines.append(f'{indent}try:')
+        sub_indent = indent + '    '
+        step_lbl = f'{stmt.step_label}: ' if stmt.step_label is not None else ''
+        lines.append(f'{sub_indent}# {step_lbl}WHILE ({stmt.condition.render()})')
+        lines.append(f'{sub_indent}while {stmt.condition.render()}:')
+        body_indent = sub_indent + '    '
+        if not stmt.body:
+            lines.append(f'{body_indent}pass')
+        else:
+            for body_item in stmt.body:
+                lines.extend(_render_cleanup_statement(body_item, aliases, indent=body_indent))
+        lines.append(f'{indent}except Exception as _cln_err:')
+        lines.append(f'{indent}    cleanup_errors.append(_cln_err)')
     elif isinstance(stmt, BreakStatement):
         b_lbl = f'{stmt.step_label}: ' if stmt.step_label is not None else ''
         if stmt.condition is not None:
@@ -221,6 +246,9 @@ def _format_spec_docstring(case):
     if case.raw_spec and case.raw_spec.strip():
         return case.raw_spec.strip()
     lines = []
+    if case.requirement:
+        lines.append(f'Requirement: {case.requirement}')
+        lines.append('')
     preconds = [s for s in case.steps if getattr(s, 'phase', None) == 'PRECONDITION']
     if preconds:
         lines.append('Precondition')
@@ -232,6 +260,9 @@ def _format_spec_docstring(case):
                 num = f'{s.step_label}: ' if s.step_label is not None else ''
                 items = ', '.join(literal(x) for x in s.items)
                 lines.append(f'{num}FOR ({s.variable};[{items}])')
+            elif isinstance(s, WhileLoop):
+                num = f'{s.step_label}: ' if s.step_label is not None else ''
+                lines.append(f'{num}WHILE ({s.condition.render()})')
         lines.append('')
     actions = [s for s in case.steps if getattr(s, 'phase', None) in ('ACTION', 'EXPECTED')]
     if actions:
@@ -244,6 +275,9 @@ def _format_spec_docstring(case):
                 num = f'{s.step_label}: ' if s.step_label is not None else ''
                 items = ', '.join(literal(x) for x in s.items)
                 lines.append(f'{num}FOR ({s.variable};[{items}])')
+            elif isinstance(s, WhileLoop):
+                num = f'{s.step_label}: ' if s.step_label is not None else ''
+                lines.append(f'{num}WHILE ({s.condition.render()})')
         lines.append('')
     cleanups = [s for s in case.steps if getattr(s, 'phase', None) == 'CLEANUP']
     if cleanups:
@@ -265,6 +299,9 @@ def _format_spec_docstring(case):
                         cond = f' ({b.condition.render()})' if b.condition else ''
                         lines.append(f'  {b_num}BREAK{cond}')
                 lines.append('END FOR')
+            elif isinstance(s, WhileLoop):
+                num = f'{s.step_label}: ' if s.step_label is not None else ''
+                lines.append(f'{num}WHILE ({s.condition.render()})')
     return '\n'.join(lines).strip()
 
 
@@ -274,6 +311,8 @@ def _collect_case_variable_names(cases):
         for item in items:
             if isinstance(item, Loop):
                 vars_found.add(item.variable)
+                _visit(item.body)
+            elif isinstance(item, WhileLoop):
                 _visit(item.body)
             elif isinstance(item, IfBlock):
                 for branch in item.branches:

@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "generated_at": "2026-11-04T20:09:37.196684+00:00",
+  "generated_at": "2026-11-04T21:37:21.878188+00:00",
   "files": [
     "bms/test_tc_08_bms_hv_precharge_sequence.py",
     "bms/test_tc_09_bms_cell_overvoltage_derating.py",

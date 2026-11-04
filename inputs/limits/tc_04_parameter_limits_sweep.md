@@ -1,5 +1,6 @@
 # TESTFALL: TC_04_PARAMETER_LIMITS_SWEEP
 **NAME:** Tc 04 Parameter Limits Sweep
+**ANFORDERUNG:** REQ_LIMITS_SWEEP_001
 
 ## Precondition
 10. Bildschirm HOME auswählen

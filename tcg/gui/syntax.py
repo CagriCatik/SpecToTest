@@ -47,7 +47,7 @@ class SpecSyntaxHighlighter(QSyntaxHighlighter):
         fmt_section.setForeground(c_section)
         fmt_section.setFontWeight(QFont.Weight.Bold)
         self.rules.append((
-            QRegularExpression(r'^(#+\s*.*|Preconditions?:?|Vorbedingungen:?|Actions?:?|Ablauf:?|Testschritte:?|Postconditions?:?|Nachbedingungen:?|Expected(?:\s+Results?)?:?|Erwartete(?:\s+Ergebnisse?)?:?|Erwartungen:?)'),
+            QRegularExpression(r'^(#+\s*.*|Preconditions?:?|Vorbedingungen:?|Actions?:?|Ablauf:?|Testschritte:?|Postconditions?:?|Nachbedingungen:?|Expected(?:\s+Results?)?:?|Erwartete(?:\s+Ergebnisse?)?:?|Erwartungen:?|Anforderung:?|Requirements?:?)'),
             fmt_section
         ))
 
@@ -60,12 +60,12 @@ class SpecSyntaxHighlighter(QSyntaxHighlighter):
             fmt_step
         ))
 
-        # 3. Control Flow Keywords (FOR, END FOR, BREAK, IF, ELSE IF, ELSE, END IF, SWITCH, CASE, DEFAULT, END SWITCH)
+        # 3. Control Flow Keywords (FOR, END FOR, WHILE, END WHILE, BREAK, IF, ELSE IF, ELSE, END IF, SWITCH, CASE, DEFAULT, END SWITCH, AND, OR)
         fmt_keyword = QTextCharFormat()
         fmt_keyword.setForeground(c_keyword)
         fmt_keyword.setFontWeight(QFont.Weight.Bold)
         self.rules.append((
-            QRegularExpression(r'\b(FOR|END\s+FOR|BREAK|IF|ELSE\s+IF|ELSE|END\s+IF|SWITCH|CASE|DEFAULT|END\s+SWITCH)\b', QRegularExpression.PatternOption.CaseInsensitiveOption),
+            QRegularExpression(r'\b(FOR|END\s+FOR|WHILE|END\s+WHILE|BREAK|IF|ELSE\s+IF|ELSE|END\s+IF|SWITCH|CASE|DEFAULT|END\s+SWITCH|AND|OR)\b', QRegularExpression.PatternOption.CaseInsensitiveOption),
             fmt_keyword
         ))
 

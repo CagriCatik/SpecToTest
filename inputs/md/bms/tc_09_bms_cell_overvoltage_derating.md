@@ -1,5 +1,6 @@
 # TESTFALL: TC_09_BMS_CELL_OVERVOLTAGE_DERATING
 **NAME:** Tc 09 Bms Cell Overvoltage Derating
+**ANFORDERUNG:** REQ_BMS_CELL_OVP_001
 
 ## Precondition
 10. Zündung an

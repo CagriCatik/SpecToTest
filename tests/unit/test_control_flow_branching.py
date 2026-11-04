@@ -242,6 +242,92 @@ class ControlFlowBranchingTests(BaseTestCase):
             with self.assertRaisesRegex(SpecError, "variable 'undeclared_var' in SWITCH is undefined"):
                 compile_cases(sections, self.mappings, self.profile, p.name)
 
+    def test_while_loop_execution_and_break(self):
+        spec = """# TESTFALL: TC_WHILE_LOOP
+**NAME:** While Loop Test
+**ANFORDERUNG:** REQ_WHILE_001
+
+## Action
+10: FOR (step;[1])
+11:   WHILE (step <= 1)
+12.     Versorgung auf 12 V setzen
+13:     BREAK (step == 1)
+14:   END WHILE
+15: END FOR
+
+## Expected Result
+10. CAN-Signal CellTempMax ist 25 °C
+"""
+        case, source, result = self._compile_and_run(spec)
+        self.assertEqual(result.result, "PASS")
+        self.assertEqual(case.requirement, "REQ_WHILE_001")
+        self.assertIn("while step <= 1:", source)
+        self.assertIn("if step == 1:", source)
+        self.assertIn("break", source)
+
+    def test_compound_conditions_and_or_parens(self):
+        spec = """# TESTFALL: TC_COMPOUND_COND
+**NAME:** Compound Condition Test
+**REQUIREMENT:** REQ_LOGIC_002
+
+## Action
+10: FOR (v;[10, 25, 99])
+11:   IF ((v >= 10 AND v <= 20) OR v == 99)
+12.     Versorgung auf 12 V setzen
+13:   ELSE IF (v > 20 && v < 30)
+14.     Versorgung auf 13.5 V setzen
+15:   ELSE
+16.     Versorgung auf 14 V setzen
+17:   END IF
+18: END FOR
+
+## Expected Result
+10. CAN-Signal CellTempMax ist 25 °C
+"""
+        case, source, result = self._compile_and_run(spec)
+        self.assertEqual(result.result, "PASS")
+        self.assertEqual(case.requirement, "REQ_LOGIC_002")
+        self.assertIn("if ((v >= 10 and v <= 20) or v == 99):", source)
+        self.assertIn("elif (v > 20 and v < 30):", source)
+
+    def test_parser_unclosed_while_error(self):
+        spec = """# TESTFALL: TC_ERR_WHILE
+**NAME:** Error While
+## Action
+10: FOR (i;[1, 2])
+11:   WHILE (i < 2)
+12.     Versorgung auf 12 V setzen
+13: END FOR
+"""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "err_while.md"
+            path.write_text(spec, encoding="utf-8")
+            with self.assertRaisesRegex(SpecError, "unclosed WHILE block before END FOR"):
+                read_text_spec(path)
+
+    def test_unexpected_end_while(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            p = Path(tmp_dir) / "p.md"
+            p.write_text("# TESTFALL: TC_W1\n**NAME:** N\n## Action\n10: END WHILE\n", encoding="utf-8")
+            with self.assertRaisesRegex(SpecError, "unexpected END WHILE without active WHILE loop"):
+                read_text_spec(p)
+
+    def test_while_and_compound_scoping_errors(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            # Undefined variable in WHILE condition
+            p1 = Path(tmp_dir) / "w1.md"
+            p1.write_text("# TESTFALL: TC_W1\n**NAME:** N\n## Action\n10: WHILE (undef_var < 5)\n11. Versorgung auf 12 V setzen\n12: END WHILE\n", encoding="utf-8")
+            sections = read_text_spec(p1)
+            with self.assertRaisesRegex(SpecError, "variable 'undef_var' in WHILE condition is undefined"):
+                compile_cases(sections, self.mappings, self.profile, p1.name)
+
+            # Undefined variable in Compound condition
+            p2 = Path(tmp_dir) / "w2.md"
+            p2.write_text("# TESTFALL: TC_W2\n**NAME:** N\n## Action\n10: FOR (v;[1])\n11: IF (v == 1 AND missing_var > 0)\n12. Versorgung auf 12 V setzen\n13: END IF\n14: END FOR\n", encoding="utf-8")
+            sections = read_text_spec(p2)
+            with self.assertRaisesRegex(SpecError, "variable 'missing_var' in IF condition is undefined"):
+                compile_cases(sections, self.mappings, self.profile, p2.name)
+
 
 if __name__ == "__main__":
     unittest.main()

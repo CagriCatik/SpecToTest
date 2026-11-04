@@ -8,6 +8,8 @@ import operations.ignition as _op_ignition
 def run_tc_09_bms_cell_overvoltage_derating(bench):
     """Original Test Specification:
     ========================================================================
+    Requirement: REQ_BMS_CELL_OVP_001
+    
     Precondition
     10. Zündung an
     20. CAN-Signal Clamp15Status auf 1 setzen

@@ -1,5 +1,6 @@
 # TESTFALL: TC_06_CAN_SIGNAL_TRANSMISSION
 **NAME:** Tc 06 Can Signal Transmission
+**ANFORDERUNG:** REQ_CAN_SIGNAL_TX_001
 
 ## Precondition
 10. Zündung an

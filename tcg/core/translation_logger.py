@@ -77,10 +77,12 @@ def log_spec_file_start(logger: logging.Logger, spec_path: Path, rel_dir: str) -
     logger.info(">>> %-12s Lese Spezifikation: %s (Format: %s)", domain_tag, spec_path.name, spec_path.suffix.upper())
 
 
-def log_case_header(logger: logging.Logger, case_id: str, name: str, objective: str | None) -> None:
+def log_case_header(logger: logging.Logger, case_id: str, name: str, objective: str | None, requirement: str | None = None) -> None:
     """Logs test case metadata discovered by inbound parser."""
     logger.info("    ╔═ Testfall-ID: %s", case_id)
     logger.info("    ║  Name:        %s", name)
+    if requirement:
+        logger.info("    ║  Anforderung: %s", requirement)
     if objective:
         logger.info("    ║  Testziel:    %s", objective)
     logger.info("    ╠─ Übersetzung der Spezifikationsschritte in typisierte Operationen:")
@@ -142,9 +144,9 @@ def log_code_emitted(logger: logging.Logger, case_id: str, output_path: Path, lo
 
 def log_compiled_case(logger: logging.Logger, case: Any, output_path: Path, source: str) -> None:
     """Logs full case translation trace and generated python metrics."""
-    from tcg.core.model import BreakStatement, IfBlock, Loop, Step, SwitchBlock
+    from tcg.core.model import BreakStatement, IfBlock, Loop, Step, SwitchBlock, WhileLoop
 
-    log_case_header(logger, case.id, case.name, case.objective)
+    log_case_header(logger, case.id, case.name, case.objective, getattr(case, 'requirement', None))
 
     def _walk(items):
         for item in items:
@@ -164,6 +166,9 @@ def log_compiled_case(logger: logging.Logger, case: Any, output_path: Path, sour
                 )
             elif isinstance(item, Loop):
                 log_loop_header(logger, item.variable, item.items)
+                _walk(item.body)
+            elif isinstance(item, WhileLoop):
+                logger.info("    ║  [WHILE-LOOP]     | Condition: (%s)", item.condition.render())
                 _walk(item.body)
             elif isinstance(item, IfBlock):
                 for idx, branch in enumerate(item.branches):

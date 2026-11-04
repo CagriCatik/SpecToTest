@@ -1,5 +1,6 @@
 # TESTFALL: TC_02_HMI_LOOP_VERIFICATION
 **NAME:** Tc 02 Hmi Loop Verification
+**ANFORDERUNG:** REQ_HMI_DISPLAY_LOOP_001
 
 ## Precondition
 10. Bildschirm HOME auswählen
