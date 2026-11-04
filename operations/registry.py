@@ -49,29 +49,7 @@ DTC = Resource('diagnostic_code')
 SCREEN = Resource('screen')
 PARAMETER = Resource('parameter')
 PARAMETER_VALUE = DecimalType(Decimal('0'), Decimal('100'))
-_current_can_signal: ContextVar[str | None] = ContextVar('_current_can_signal', default=None)
-
-
-@dataclass(frozen=True)
-class CanSignalResource:
-    """Wrapper um Resource('can_signal'), der das aktuelle Signal im Thread-/Task-Kontext speichert."""
-    resource: Resource
-
-    @property
-    def kind(self) -> str:
-        return self.resource.kind
-
-    @property
-    def lexical(self) -> re.Pattern:
-        return self.resource.lexical
-
-    def convert(self, text: str, profile: Any) -> str:
-        res = self.resource.convert(text, profile)
-        _current_can_signal.set(res)
-        return res
-
-
-CAN_SIGNAL = CanSignalResource(Resource('can_signal'))
+CAN_SIGNAL = Resource('can_signal')
 
 BASE_CAN_SIGNAL_VALUE = Quantity(
     dimension='can_signal_value',
@@ -101,62 +79,72 @@ BASE_CAN_SIGNAL_VALUE = Quantity(
 )
 
 
-def _load_can_signal_enums() -> tuple[dict[str, dict[str, Decimal]], set[str]]:
-    """Lädt signalabhängige Enum-Zustände aus der CAN-Signaldatenbank (inputs/can_signals.json)."""
+def load_can_signal_database(source: str | Path | dict | None = None) -> tuple[dict[str, dict[str, Decimal]], set[str]]:
+    """Lädt signalabhängige Enum-Zustände strikt und ausschließlich aus der übergebenen CAN-Signaldatenbank.
+
+    source kann ein Dateipfad (str oder Path) oder ein bereits geparstes dict sein.
+    Wird source=None übergeben, wird standardmäßig inputs/can_signals.json geladen.
+
+    Fehlerbehandlung:
+    - Fehlende Datei -> FileNotFoundError
+    - Ungültiges JSON / ungültiges Schema -> SpecError
+    - Keine stillschweigenden Fallbacks auf festverdrahtete Demo-Zustände!
+    """
+    if source is None:
+        source = Path(__file__).resolve().parent.parent / 'inputs' / 'can_signals.json'
+
+    if isinstance(source, (str, Path)):
+        path = Path(source)
+        if not path.is_file():
+            raise FileNotFoundError(f"CAN-Signaldatenbank nicht gefunden: {path}")
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        except json.JSONDecodeError as err:
+            raise SpecError(f"Beschädigte CAN-Signaldatenbank ({path.name}): {err}") from None
+        except OSError as err:
+            raise SpecError(f"Konnte CAN-Signaldatenbank nicht lesen ({path.name}): {err.strerror}") from None
+    elif isinstance(source, dict):
+        data = source
+    else:
+        raise SpecError(f"Ungültige CAN-Signaldatenbank-Quelle: {type(source).__name__}")
+
+    if not isinstance(data, dict) or 'signals' not in data or not isinstance(data['signals'], dict):
+        raise SpecError("Ungültiges Schema der CAN-Signaldatenbank: Schlüssel 'signals' fehlt oder ist kein Objekt")
+
     signal_enums: dict[str, dict[str, Decimal]] = {}
     all_known_states: set[str] = set()
 
-    default_signals = {
-        'DoorContactStatus': {'Geschlossen': Decimal('0'), 'Offen': Decimal('1')},
-        'InterlockStatus': {'Offen': Decimal('0'), 'Geschlossen': Decimal('1')},
-        'Clamp15Status': {'Aus': Decimal('0'), 'An': Decimal('1')},
-        'BMSState': {
-            'Init': Decimal('0'), 'Standby': Decimal('1'), 'Precharge': Decimal('2'),
-            'DriveReady': Decimal('3'), 'Charge': Decimal('4'), 'Fault': Decimal('5'),
-        },
-        'HVMainPosContactState': {'Offen': Decimal('0'), 'Geschlossen': Decimal('1'), 'Fehler': Decimal('2')},
-        'HVMainNegContactState': {'Offen': Decimal('0'), 'Geschlossen': Decimal('1'), 'Fehler': Decimal('2')},
-        'PrechargeContactState': {'Offen': Decimal('0'), 'Geschlossen': Decimal('1'), 'Fehler': Decimal('2')},
-        'CrashSignal': {'Kein Crash': Decimal('0'), 'Crash erkannt': Decimal('1')},
-        'BalancingActive': {'Inaktiv': Decimal('0'), 'Aktiv': Decimal('1')},
-        'CoolingRequest': {'Aus': Decimal('0'), 'Stufe 1': Decimal('1'), 'Stufe 2': Decimal('2')},
-        'IsolationStatus': {'Normal': Decimal('0'), 'Warnung': Decimal('1'), 'Fehler': Decimal('2')},
-    }
-    for sname, states in default_signals.items():
-        signal_enums[sname] = {}
-        for desc, val in states.items():
-            signal_enums[sname][desc] = val
-            signal_enums[sname][desc.replace(' ', '_')] = val
-            all_known_states.add(desc)
-            all_known_states.add(desc.replace(' ', '_'))
-
-    can_json = Path(__file__).resolve().parent.parent / 'inputs' / 'can_signals.json'
-    if can_json.exists():
-        try:
-            with open(can_json, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            for sname, sdata in data.get('signals', {}).items():
-                if 'values' in sdata:
-                    if sname not in signal_enums:
-                        signal_enums[sname] = {}
-                    for raw_val, desc in sdata['values'].items():
-                        val = Decimal(str(raw_val))
-                        signal_enums[sname][desc] = val
-                        signal_enums[sname][desc.replace(' ', '_')] = val
-                        all_known_states.add(desc)
-                        all_known_states.add(desc.replace(' ', '_'))
-        except Exception:
-            pass
+    for sname, sdata in data['signals'].items():
+        if isinstance(sdata, dict) and 'values' in sdata and isinstance(sdata['values'], dict):
+            enums_for_signal: dict[str, Decimal] = {}
+            for raw_val, desc in sdata['values'].items():
+                try:
+                    val = Decimal(str(raw_val))
+                except Exception:
+                    raise SpecError(f"Ungültiger Rohwert {raw_val!r} für Signal {sname!r} in CAN-Datenbank")
+                enums_for_signal[desc] = val
+                enums_for_signal[desc.replace(' ', '_')] = val
+                all_known_states.add(desc)
+                all_known_states.add(desc.replace(' ', '_'))
+            if enums_for_signal:
+                signal_enums[sname] = enums_for_signal
 
     return signal_enums, all_known_states
 
 
-@dataclass(frozen=True)
+@dataclass
 class SymbolicCanSignalValue:
     """Signalabhängige Quantity-Erweiterung für CAN-Signale: akzeptiert Zahlen/Einheiten und DBC-Enums."""
     quantity: Quantity
     signal_enums: dict[str, dict[str, Decimal]]
     all_known_states: set[str]
+
+    def configure_database(self, source: str | Path | dict | None = None) -> None:
+        """Aktualisiert die Enum-Zustände aus einer expliziten Signaldatenbank."""
+        enums, states = load_can_signal_database(source)
+        self.signal_enums = enums
+        self.all_known_states = states
 
     @property
     def unit(self):
@@ -186,7 +174,11 @@ class SymbolicCanSignalValue:
 
     def convert(self, text, profile):
         clean = text.strip('"\'')
-        sig = _current_can_signal.get()
+        from tcg.core.parameters import get_step_context
+        ctx = get_step_context()
+        sig = (ctx.get('signal') or ctx.get('can_signal')) if ctx else None
+        if sig is not None:
+            sig = sig.strip('"\'')
 
         if sig is not None:
             sig_enums = self.signal_enums.get(sig, {})
@@ -198,7 +190,7 @@ class SymbolicCanSignalValue:
                 if k.lower() == clean.lower() or k.replace(' ', '_').lower() == clean_norm:
                     return v
 
-            # 2. Wenn der Bezeichner ein bekannter DBC-Zustand ist, aber nicht zu DIESEM Signal gehört -> Fehler!
+            # 2. Wenn der Bezeichner ein bekannter Zustand ist, aber nicht zu DIESEM Signal gehört -> Fehler!
             if clean in self.all_known_states or clean.replace('_', ' ') in self.all_known_states:
                 allowed = sorted(set(sig_enums.keys()))
                 allowed_str = f"gültige Zustände: {', '.join(allowed)}" if allowed else "keine (kontinuierliches Signal)"
@@ -212,8 +204,16 @@ class SymbolicCanSignalValue:
         return self.quantity.convert(text, profile)
 
 
-_SIGNAL_ENUMS, _ALL_KNOWN_STATES = _load_can_signal_enums()
+_SIGNAL_ENUMS, _ALL_KNOWN_STATES = load_can_signal_database()
 CAN_SIGNAL_VALUE = SymbolicCanSignalValue(BASE_CAN_SIGNAL_VALUE, _SIGNAL_ENUMS, _ALL_KNOWN_STATES)
+
+
+def configure_can_database(source: str | Path | dict | None = None) -> None:
+    """Konfiguriert die aktive CAN-Signaldatenbank für alle CAN-Operationen."""
+    CAN_SIGNAL_VALUE.configure_database(source)
+
+
+_load_can_signal_enums = load_can_signal_database
 
 VEHICLE_SPEED_VALUE = Quantity(
     dimension='vehicle_speed',

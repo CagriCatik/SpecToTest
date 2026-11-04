@@ -4,6 +4,7 @@ import re
 import tomllib
 
 from .model import SpecError
+from .parameters import reset_step_context, set_step_context
 
 
 MAPPING_KEYS = frozenset({'id', 'template', 'operation', 'parameters'})
@@ -218,11 +219,29 @@ def resolve(text, mappings, profile):
         raise SpecError(f'ambiguous: {len(found)} template matches for {text!r}: {details}')
     mapping, values = found[0]
     converted, problems = {}, []
-    for parameter, value in zip(mapping.parameters, values):
-        try:
-            converted[parameter.name] = parameter.type.convert(value, profile)
-        except SpecError as error:
-            problems.extend(f'{mapping.id}.{parameter.name}: {problem}' for problem in error.problems)
+
+    # Map placeholders to their raw matched values and store in sentence-level context
+    raw_params = {parameter.name: value for parameter, value in zip(mapping.parameters, values)}
+    token = set_step_context(raw_params)
+
+    # Dependency ordering: reference/resource parameters (e.g. 'signal', Resource types)
+    # are converted first, so dependent values always find their reference in context.
+    def _param_priority(item):
+        param, _ = item
+        if param.name == 'signal' or getattr(param.type, 'kind', None) is not None:
+            return 0
+        return 1
+
+    ordered_pairs = sorted(zip(mapping.parameters, values), key=_param_priority)
+    try:
+        for parameter, value in ordered_pairs:
+            try:
+                converted[parameter.name] = parameter.type.convert(value, profile)
+            except SpecError as error:
+                problems.extend(f'{mapping.id}.{parameter.name}: {problem}' for problem in error.problems)
+    finally:
+        reset_step_context(token)
+
     if problems:
         raise SpecError(problems)
     arguments = tuple((parameter.name, converted.get(parameter.name, parameter.default))

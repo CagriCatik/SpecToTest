@@ -13,7 +13,11 @@ from tools.dbc_to_json import (
     dict_to_dbc,
     validate_can_database,
 )
-from operations.registry import REGISTRY
+from operations.registry import (
+    REGISTRY,
+    configure_can_database,
+    load_can_signal_database,
+)
 from tcg.adapters.inbound.text_parser import parse_text_spec
 from tcg.adapters.outbound.dummy_bench import VectorDummyBench, load_config
 from tcg.adapters.outbound.python_emitter import render_python
@@ -295,6 +299,157 @@ NAME: BMS Wrong State Test
         with self.assertRaises(SpecError) as ctx:
             compile_cases(parse_text_spec(spec_bms_wrong), mappings, profile, "test_err3.md")
         self.assertIn("Zustand 'Geschlossen' ist für CAN-Signal 'BMSState' nicht gültig", str(ctx.exception))
+
+    def test_inverted_template_order_and_context_isolation(self):
+        """Verify that mappings with inverted placeholder order ({value} before {signal}) resolve
+        strictly based on the sentence's own signal and without sentence-to-sentence context leakage.
+        """
+        inverted_toml = """
+[[mapping]]
+id = "MAP_INVERTED_SET"
+template = "Wert {wert} an CAN-Signal {signal} setzen"
+operation = "set_can_signal"
+parameters = { wert = "value", signal = "signal" }
+
+[[mapping]]
+id = "MAP_INVERTED_EXPECT"
+template = "Wert {wert} für CAN-Signal {signal} erwartet"
+operation = "expect_can_signal"
+parameters = { wert = "value", signal = "signal" }
+"""
+        mapping_entries = parse_mapping_document(inverted_toml)
+        mappings = load_mappings(mapping_entries, REGISTRY)
+        profile = load_profile(ROOT / "inputs/resources.json")
+
+        spec_text = """# TESTFALL: TC_INVERTED_ORDER
+NAME: Inverted Placeholder Order and Sentence Context Isolation Test
+## Action
+10. Wert Geschlossen an CAN-Signal InterlockStatus setzen
+20. Wert Geschlossen an CAN-Signal DoorContactStatus setzen
+## Expected Result
+10. Wert Geschlossen für CAN-Signal InterlockStatus erwartet
+20. Wert Geschlossen für CAN-Signal DoorContactStatus erwartet
+"""
+        sections = parse_text_spec(spec_text)
+        cases = compile_cases(sections, mappings, profile, "test_inverted.md")
+        source = render_python(cases, REGISTRY, "VectorDummyBench")
+
+        # Step 10: InterlockStatus Geschlossen must be Decimal('1')
+        self.assertIn("_op_can.set_can_signal(bench, signal='InterlockStatus', value=Decimal('1'))", source)
+        self.assertIn("_op_can.expect_can_signal(bench, signal='InterlockStatus', value=Decimal('1'))", source)
+
+        # Step 20: DoorContactStatus Geschlossen must be Decimal('0') (NOT influenced by step 10's InterlockStatus!)
+        self.assertIn("_op_can.set_can_signal(bench, signal='DoorContactStatus', value=Decimal('0'))", source)
+        self.assertIn("_op_can.expect_can_signal(bench, signal='DoorContactStatus', value=Decimal('0'))", source)
+
+        # Execute on simulated Vector testbench
+        bench = VectorDummyBench(load_config(ROOT / "inputs/demo_bench.json", profile))
+        ns = {}
+        exec(compile(source, "generated_inverted_test.py", "exec"), ns)
+        runner = ns["RUNNERS"]["TC_INVERTED_ORDER"]
+        result = runner(bench)
+        self.assertEqual(result.result, "PASS")
+
+    def test_database_isolation_no_demo_leakage(self):
+        """Verify that when a custom database is configured, ONLY states from that database
+        are accepted and no hardcoded demo defaults leak in.
+        """
+        try:
+            custom_db = {
+                "database": "Custom_Isolation_CAN",
+                "baudrate": 500000,
+                "messages": {
+                    "Body_Custom": {"id": "0x200", "dlc": 8},
+                    "Other_Custom": {"id": "0x210", "dlc": 8},
+                },
+                "signals": {
+                    "DoorContactStatus": {
+                        "message": "Body_Custom",
+                        "start_bit": 0,
+                        "length": 1,
+                        "values": {
+                            "0": "Zu",
+                            "1": "Auf"
+                        }
+                    },
+                    "OtherSignal": {
+                        "message": "Other_Custom",
+                        "start_bit": 0,
+                        "length": 1,
+                        "values": {
+                            "0": "Geschlossen",
+                            "1": "Offen"
+                        }
+                    }
+                }
+            }
+            configure_can_database(custom_db)
+
+            custom_toml = """
+[[mapping]]
+id = "MAP_CAN_SET"
+template = "CAN-Signal {signal} auf {wert} setzen"
+operation = "set_can_signal"
+parameters = { signal = "signal", wert = "value" }
+"""
+            mapping_entries = parse_mapping_document(custom_toml)
+            mappings = load_mappings(mapping_entries, REGISTRY)
+            profile = load_profile(ROOT / "inputs/resources.json")
+
+            # 1. Custom defined state 'Zu' must succeed and compile to 0
+            valid_spec = """# TESTFALL: TC_CUSTOM_VALID
+NAME: Custom DB Valid
+## Action
+10. CAN-Signal DoorContactStatus auf Zu setzen
+"""
+            cases = compile_cases(parse_text_spec(valid_spec), mappings, profile, "custom_valid.md")
+            source = render_python(cases, REGISTRY, "VectorDummyBench")
+            self.assertIn("signal='DoorContactStatus', value=Decimal('0')", source)
+
+            # 2. State 'Geschlossen' belonging to OtherSignal must be strictly rejected for DoorContactStatus
+            invalid_spec = """# TESTFALL: TC_CUSTOM_INVALID
+NAME: Custom DB Invalid
+## Action
+10. CAN-Signal DoorContactStatus auf Geschlossen setzen
+"""
+            with self.assertRaises(SpecError) as ctx:
+                compile_cases(parse_text_spec(invalid_spec), mappings, profile, "custom_invalid.md")
+            self.assertIn("Zustand 'Geschlossen' ist für CAN-Signal 'DoorContactStatus' nicht gültig", str(ctx.exception))
+            self.assertIn("Zu", str(ctx.exception))
+            self.assertIn("Auf", str(ctx.exception))
+
+            # 3. Completely unknown state must also be rejected
+            unknown_spec = """# TESTFALL: TC_CUSTOM_UNKNOWN
+NAME: Custom DB Unknown
+## Action
+10. CAN-Signal DoorContactStatus auf Vollgas setzen
+"""
+            with self.assertRaises(SpecError) as ctx:
+                compile_cases(parse_text_spec(unknown_spec), mappings, profile, "custom_unknown.md")
+            self.assertIn("Vollgas", str(ctx.exception))
+
+        finally:
+            # Revert to standard database
+            configure_can_database(None)
+
+    def test_corrupt_and_missing_can_database_handling(self):
+        """Verify that missing files, corrupted JSON or invalid schema raise visible, clear errors."""
+        # 1. Missing file -> FileNotFoundError
+        with self.assertRaises(FileNotFoundError):
+            load_can_signal_database("/non/existent/path/never_there_signals.json")
+
+        # 2. Corrupted JSON file -> SpecError
+        with tempfile.TemporaryDirectory() as tmpdir:
+            broken_file = Path(tmpdir) / "broken.json"
+            broken_file.write_text("{ this is not valid json }", encoding="utf-8")
+            with self.assertRaises(SpecError) as ctx:
+                load_can_signal_database(broken_file)
+            self.assertIn("Beschädigte CAN-Signaldatenbank", str(ctx.exception))
+
+        # 3. Invalid schema without 'signals' key -> SpecError
+        with self.assertRaises(SpecError) as ctx:
+            load_can_signal_database({"database": "BadSchema"})
+        self.assertIn("Schlüssel 'signals' fehlt", str(ctx.exception))
 
 
 

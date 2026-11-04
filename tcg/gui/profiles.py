@@ -24,6 +24,7 @@ class ProjectProfile:
     reports_dir: str = "reports"
     bench_type: str = "software"
     bench_config: str = ""
+    can_database: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -38,6 +39,7 @@ class ProjectProfile:
             'reports_dir': self.reports_dir,
             'bench_type': self.bench_type,
             'bench_config': self.bench_config,
+            'can_database': self.can_database,
         }
 
     @classmethod
@@ -54,6 +56,7 @@ class ProjectProfile:
             reports_dir=data.get('reports_dir', ''),
             bench_type=data.get('bench_type', 'dummy'),
             bench_config=data.get('bench_config', ''),
+            can_database=data.get('can_database', ''),
         )
 
 
@@ -72,6 +75,7 @@ def get_builtin_profiles(root_dir: Path | None = None) -> list[ProjectProfile]:
             reports_dir='reports',
             bench_type='dummy',
             bench_config='inputs/demo_bench.json',
+            can_database='inputs/can_signals.json',
         ),
         ProjectProfile(
             id='service_pilot',
@@ -132,6 +136,17 @@ def test_validate_profile(profile: ProjectProfile) -> tuple[bool, str | None, di
     specs_p = Path(profile.specs_dir)
     if not specs_p.is_dir():
         return False, f"Spezifikationsverzeichnis '{profile.specs_dir}' existiert nicht.", {}
+
+    # 5. Check CAN database if configured
+    if profile.can_database:
+        cdb_p = Path(profile.can_database)
+        if not cdb_p.is_file():
+            return False, f"CAN-Signaldatenbank '{profile.can_database}' existiert nicht.", {}
+        try:
+            from operations.registry import load_can_signal_database
+            load_can_signal_database(cdb_p)
+        except Exception as e:
+            return False, f"Fehler in CAN-Signaldatenbank '{profile.can_database}': {e}", {}
 
     return True, None, {
         'registry': registry,

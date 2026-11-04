@@ -356,6 +356,32 @@ class GuiWindowWorkspacesIntegrationTests(unittest.TestCase):
         self.assertEqual(win.state.profile_config.id, initial_id)
         self.assertEqual(len(win.state.operations), 24)
 
+    def test_profile_switch_rejects_corrupted_can_database(self):
+        win = MappingStudioWindow()
+        initial_id = win.state.profile_config.id
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            f.write("{ invalid json")
+            bad_path = f.name
+
+        try:
+            broken_can_prof = ProjectProfile(
+                id="broken_can_profile",
+                name="Broken CAN",
+                registry_target="operations.registry:REGISTRY",
+                mapping_files=["inputs/operation_mapping.toml"],
+                resources_file="inputs/resources.json",
+                specs_dir="inputs",
+                can_database=bad_path,
+            )
+
+            ok, err = win.state.set_project_profile(broken_can_prof)
+            self.assertFalse(ok)
+            self.assertIn("CAN-Signaldatenbank", err)
+            self.assertEqual(win.state.profile_config.id, initial_id)
+        finally:
+            Path(bad_path).unlink(missing_ok=True)
+
     def test_action_expectation_navigation(self):
         win = MappingStudioWindow()
         specs = win.workspace_specs

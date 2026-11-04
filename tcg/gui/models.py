@@ -220,6 +220,13 @@ class MappingStudioState:
         self.mapping_file = Path(profile.mapping_files[0]) if profile.mapping_files else None
         self.resources_file = Path(profile.resources_file) if profile.resources_file else None
 
+        if profile.can_database:
+            try:
+                from operations.registry import configure_can_database
+                configure_can_database(profile.can_database)
+            except Exception as e:
+                print(f"Warnung: Konnte CAN-Signaldatenbank nicht konfigurieren: {e}")
+
         self.set_mappings_from_dicts(artifacts['raw_mappings'])
         self.is_dirty = False
         return True, None
@@ -237,6 +244,13 @@ class MappingStudioState:
         except Exception as e:
             self.profile = ResourceProfile('EMPTY', {})
             print(f"Warnung: Konnte Profil '{self.resources_file}' nicht laden: {e}")
+
+        if self.profile_config and getattr(self.profile_config, 'can_database', None):
+            try:
+                from operations.registry import configure_can_database
+                configure_can_database(self.profile_config.can_database)
+            except Exception as e:
+                print(f"Warnung: Konnte CAN-Signaldatenbank nicht laden: {e}")
 
         all_raw = []
         from tcg.gui.toml_io import load_mapping_file

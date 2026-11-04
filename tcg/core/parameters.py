@@ -1,10 +1,28 @@
 """Generic, deterministic parameter types used by operation contracts."""
+from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from decimal import Decimal as DecimalValue, InvalidOperation, localcontext
 import json
 import re
 
 from .model import SpecError, VariableRef
+
+_step_context: ContextVar[dict[str, str] | None] = ContextVar('_step_context', default=None)
+
+
+def set_step_context(raw_parameters: dict[str, str]) -> Token:
+    """Setzt die Rohparameter der aktuellen Anweisung im Thread-/Task-Kontext."""
+    return _step_context.set(raw_parameters)
+
+
+def get_step_context() -> dict[str, str] | None:
+    """Gibt die Rohparameter der aktuellen Anweisung zurück (oder None außerhalb von resolve)."""
+    return _step_context.get()
+
+
+def reset_step_context(token: Token) -> None:
+    """Setzt den Anweisungskontext nach der Auflösung zurück."""
+    _step_context.reset(token)
 
 
 IDENTIFIER_PATTERN = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
