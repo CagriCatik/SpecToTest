@@ -49,7 +49,7 @@ class OperationsView(QWidget):
         filter_box = QHBoxLayout()
         filter_box.setSpacing(10)
 
-        filter_box.addWidget(QLabel("🔍 Suche:"))
+        filter_box.addWidget(QLabel("Suche:"))
         self.search_edit = QLineEdit()
         self.search_edit.setPlaceholderText("Nach Operationsname oder Docstring filtern...")
         self.search_edit.textChanged.connect(self.apply_filter)
@@ -57,7 +57,7 @@ class OperationsView(QWidget):
 
         filter_box.addWidget(QLabel("Filter:"))
         self.coverage_filter = QComboBox()
-        self.coverage_filter.addItems(["Alle Operationen", "Nur mit Verknüpfung", "⚠️ Nur ungemappte Lücken"])
+        self.coverage_filter.addItems(["Alle Operationen", "Nur mit Verknüpfung", "Nur ungemappte Lücken"])
         self.coverage_filter.currentIndexChanged.connect(self.apply_filter)
         filter_box.addWidget(self.coverage_filter)
 
@@ -79,7 +79,7 @@ class OperationsView(QWidget):
 
         self.table = QTableWidget(0, 5)
         self.table.setHorizontalHeaderLabels([
-            "Verknüpfung", "Operation", "Zulässige Phasen", "Parameter (Pflicht/Opt)", "Verknüpfte Mappings"
+            "Status", "Operation", "Zulässige Phasen", "Parameter (Pflicht/Opt)", "Verknüpfte Mappings"
         ])
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
@@ -139,8 +139,8 @@ class OperationsView(QWidget):
         inspector_layout.addStretch()
 
         # Action Button: Link New Mapping to this Operation
-        self.btn_link_mapping = QPushButton("➕ Neues Satzmuster für diese Operation anlegen")
-        self.btn_link_mapping.setStyleSheet("background-color: #198754; color: white; font-weight: bold; padding: 8px 14px; border-radius: 4px;")
+        self.btn_link_mapping = QPushButton("Neues Satzmuster für diese Operation anlegen")
+        self.btn_link_mapping.setStyleSheet("background-color: #16a34a; color: white; font-weight: bold; padding: 8px 14px; border-radius: 4px;")
         self.btn_link_mapping.clicked.connect(self.create_mapping_for_operation)
         inspector_layout.addWidget(self.btn_link_mapping)
 
@@ -189,8 +189,9 @@ class OperationsView(QWidget):
             self.filtered_op_names.append(op_name)
 
             # 0. Status
-            status_item = QTableWidgetItem("✅ Mapped" if op_info.is_mapped else "⚠️ Lücke")
-            status_item.setForeground(QColor("#198754" if op_info.is_mapped else "#d63384"))
+            status_text = "Gültig verknüpft" if op_info.is_mapped else "Lücke"
+            status_item = QTableWidgetItem(status_text)
+            status_item.setForeground(QColor("#10b981" if op_info.is_mapped else "#ef4444"))
             status_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             self.table.setItem(row, 0, status_item)
 
@@ -251,13 +252,15 @@ class OperationsView(QWidget):
             return
 
         self.insp_name_lbl.setText(f"<code>{op_info.name}</code>")
+        valid_count = op_info.valid_mappings_count
+        total_count = len(op_info.linked_mappings)
+
         if op_info.is_mapped:
-            count = len(op_info.linked_mappings)
-            self.insp_status_lbl.setText(f"✅ <b>{count} Satz-Mapping(s)</b> verknüpft")
-            self.insp_status_lbl.setStyleSheet("color: #198754;")
+            self.insp_status_lbl.setText(f"<b>Status:</b> {valid_count} gültige(s) Satz-Mapping(s) verknüpft")
+            self.insp_status_lbl.setStyleSheet("color: #10b981;")
         else:
-            self.insp_status_lbl.setText("⚠️ <b>Nicht verknüpft!</b> Noch kein Satzmuster vorhanden.")
-            self.insp_status_lbl.setStyleSheet("color: #dc3545;")
+            self.insp_status_lbl.setText("<b>Status:</b> Nicht verknüpft — noch kein gültiges Satzmuster vorhanden.")
+            self.insp_status_lbl.setStyleSheet("color: #ef4444;")
 
         self.insp_doc_lbl.setText(op_info.docstring or "<i>Keine Beschreibung vorhanden.</i>")
         self.insp_phases_lbl.setText(f"<b>Zulässige Phasen:</b> {', '.join(op_info.phases)}")
@@ -281,7 +284,7 @@ class OperationsView(QWidget):
             self.params_table.setItem(r, 1, QTableWidgetItem(desc))
 
             req_item = QTableWidgetItem("Ja (Pflicht)" if p.required else f"Opt (Default: {p.default})")
-            req_item.setForeground(QColor("#dc3545" if p.required else "#6c757d"))
+            req_item.setForeground(QColor("#ef4444" if p.required else "#64748b"))
             self.params_table.setItem(r, 2, req_item)
 
         # Populate linked mappings list
@@ -289,12 +292,17 @@ class OperationsView(QWidget):
             lines = []
             for m in op_info.linked_mappings:
                 params_str = ", ".join(f"{k}➔{v}" for k, v in m.parameters.items())
-                status_icon = "✅" if m.is_valid else "⚠️"
-                lines.append(f"• {status_icon} <b>{m.id}</b>: <code>\"{m.template}\"</code><br>&nbsp;&nbsp;&nbsp;<span style='color: #888;'>({params_str})</span>")
+                if m.has_conflict:
+                    status_lbl = "<span style='color: #ef4444; font-weight: bold;'>[Konflikt]</span>"
+                elif m.is_valid:
+                    status_lbl = "<span style='color: #10b981; font-weight: bold;'>[Gültig]</span>"
+                else:
+                    status_lbl = "<span style='color: #f59e0b; font-weight: bold;'>[Fehler]</span>"
+                lines.append(f"• {status_lbl} <b>{m.id}</b>: <code>\"{m.template}\"</code><br>&nbsp;&nbsp;&nbsp;<span style='color: #64748b;'>({params_str})</span>")
             self.linked_mappings_lbl.setText("<br>".join(lines))
         else:
             self.linked_mappings_lbl.setText(
-                "<span style='color: #842029; background-color: #f8d7da; padding: 4px 8px; border-radius: 4px;'>"
+                "<span style='color: #ef4444; background-color: rgba(239, 68, 68, 0.1); padding: 4px 8px; border-radius: 4px;'>"
                 "Kein Satzmuster verknüpft. Klicke unten, um ein neues anzulegen."
                 "</span>"
             )
@@ -312,4 +320,3 @@ class OperationsView(QWidget):
             self.state.add_mapping(new_item)
             self.on_change()
             self.refresh()
-

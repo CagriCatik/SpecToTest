@@ -294,20 +294,20 @@ class MappingEditorDialog(QDialog):
                         type_item.setText(type_str)
 
                     if status_item:
-                        status_item.setText("✅ Zugeordnet")
-                        status_item.setForeground(QColor("#198754"))
+                        status_item.setText("Zugeordnet")
+                        status_item.setForeground(QColor("#10b981"))
                 else:
                     if type_item:
                         type_item.setText("-")
                     if status_item:
-                        status_item.setText("⚠️ Unbekannt")
-                        status_item.setForeground(QColor("#dc3545"))
+                        status_item.setText("Unbekannt")
+                        status_item.setForeground(QColor("#ef4444"))
             else:
                 if type_item:
                     type_item.setText("-")
                 if status_item:
-                    status_item.setText("❌ Nicht gebunden")
-                    status_item.setForeground(QColor("#dc3545"))
+                    status_item.setText("Nicht gebunden")
+                    status_item.setForeground(QColor("#ef4444"))
 
     def get_bindings(self) -> dict[str, str]:
         bindings = {}
@@ -347,17 +347,17 @@ class MappingEditorDialog(QDialog):
             contract = self.registry[op_name]
             phases = ", ".join(sorted(contract.phases))
             self.status_banner.setStyleSheet(
-                "background-color: #d1e7dd; color: #0f5132; border: 1px solid #badbcc; border-radius: 6px; padding: 8px;"
+                "background-color: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid #10b981; border-radius: 6px; padding: 8px;"
             )
             self.status_banner.setText(
-                f"<b>✅ Gültig verknüpft!</b> Alle Pflichtparameter sind zugewiesen. Erlaubte Phasen: <code>{phases}</code>"
+                f"<b>Gültig:</b> Alle Pflichtparameter sind zugewiesen. Erlaubte Phasen: <code>{phases}</code>"
             )
             self.btn_ok.setEnabled(True)
         else:
             self.status_banner.setStyleSheet(
-                "background-color: #f8d7da; color: #842029; border: 1px solid #f5c2c7; border-radius: 6px; padding: 8px;"
+                "background-color: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid #ef4444; border-radius: 6px; padding: 8px;"
             )
-            self.status_banner.setText(f"<b>⚠️ Noch nicht vollständig:</b> {error}")
+            self.status_banner.setText(f"<b>Unvollständig:</b> {error}")
             self.btn_ok.setEnabled(False)
 
     def on_accept(self):

@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import importlib
-import json
 from pathlib import Path
 import re
 from typing import Any
@@ -17,8 +16,9 @@ from tcg.core.mapping import (
     load_mappings,
     resolve,
 )
-from tcg.core.model import SpecError
+from tcg.core.model import SpecError, VariableRef
 from tcg.core.profile import ResourceProfile, parse_profile
+from tcg.gui.profiles import ProjectProfile, get_builtin_profiles
 
 
 @dataclass
@@ -31,6 +31,7 @@ class MappingItem:
     
     # Computed metadata
     is_valid: bool = False
+    has_conflict: bool = False
     validation_error: str | None = None
     placeholders: list[str] = field(default_factory=list)
     allowed_phases: list[str] = field(default_factory=list)
@@ -55,7 +56,12 @@ class OperationInfo:
 
     @property
     def is_mapped(self) -> bool:
-        return len(self.linked_mappings) > 0
+        """Operation is only mapped if at least one valid, non-conflicting mapping exists."""
+        return any(m.is_valid and not m.has_conflict for m in self.linked_mappings)
+
+    @property
+    def valid_mappings_count(self) -> int:
+        return sum(1 for m in self.linked_mappings if m.is_valid and not m.has_conflict)
 
     @property
     def required_parameters(self) -> list[str]:
@@ -167,20 +173,37 @@ class MappingStudioState:
 
     def __init__(
         self,
+        project_profile: ProjectProfile | None = None,
         registry_target: str = 'operations.registry:REGISTRY',
         mapping_file: str | Path | None = 'inputs/operation_mapping.toml',
         resources_file: str | Path | None = 'inputs/resources.json',
     ):
-        self.registry_target = registry_target
-        self.mapping_file: Path | None = Path(mapping_file) if mapping_file else None
-        self.resources_file: Path | None = Path(resources_file) if resources_file else None
-        
+        if project_profile is not None:
+            self.profile_config = project_profile
+            self.registry_target = project_profile.registry_target
+            self.mapping_file = Path(project_profile.mapping_files[0]) if project_profile.mapping_files else None
+            self.resources_file = Path(project_profile.resources_file) if project_profile.resources_file else None
+        else:
+            builtins = get_builtin_profiles()
+            self.profile_config = builtins[0]
+            self.registry_target = registry_target
+            self.mapping_file = Path(mapping_file) if mapping_file else None
+            self.resources_file = Path(resources_file) if resources_file else None
+
         self.registry: dict[str, OperationContract] = {}
         self.profile: ResourceProfile = ResourceProfile('EMPTY', {})
         self.mappings: list[MappingItem] = []
         self.operations: dict[str, OperationInfo] = {}
         self.is_dirty: bool = False
 
+        self.reload_all()
+
+    def set_project_profile(self, profile: ProjectProfile):
+        """Switch to a new ProjectProfile cleanly and atomically."""
+        self.profile_config = profile
+        self.registry_target = profile.registry_target
+        self.mapping_file = Path(profile.mapping_files[0]) if profile.mapping_files else None
+        self.resources_file = Path(profile.resources_file) if profile.resources_file else None
         self.reload_all()
 
     def reload_all(self):
@@ -224,7 +247,7 @@ class MappingStudioState:
         self.recalculate()
 
     def recalculate(self):
-        """Validate mappings and build the bidirectional Operation -> Mappings index."""
+        """Validate mappings, identify duplicate ID conflicts, and build the bidirectional index."""
         # 1. Build OperationInfo map
         self.operations = {}
         for op_name, contract in self.registry.items():
@@ -239,12 +262,28 @@ class MappingStudioState:
                 linked_mappings=[],
             )
 
-        # 2. Validate mappings and link to operations
+        # 2. Count ID occurrences to detect project-wide duplicate ID conflicts
+        id_counts: dict[str, int] = {}
+        for item in self.mappings:
+            clean_id = item.id.strip()
+            if clean_id:
+                id_counts[clean_id] = id_counts.get(clean_id, 0) + 1
+
+        # 3. Validate individual mappings and attach conflict markers
         for item in self.mappings:
             is_valid, err, placeholders = validate_single_mapping(
                 item.id, item.template, item.operation, item.parameters, self.registry
             )
+            clean_id = item.id.strip()
+            has_conflict = id_counts.get(clean_id, 0) > 1
+
+            if has_conflict:
+                is_valid = False
+                conflict_msg = f"Konflikt: Mapping-ID '{clean_id}' ist mehrfach vergeben."
+                err = f"{err}; {conflict_msg}" if err else conflict_msg
+
             item.is_valid = is_valid
+            item.has_conflict = has_conflict
             item.validation_error = err
             item.placeholders = placeholders
             
@@ -277,7 +316,13 @@ class MappingStudioState:
             self.recalculate()
 
     def test_sentence(self, sentence: str, phase: str | None = None) -> dict[str, Any]:
-        """Test a natural language sentence against current valid mappings."""
+        """Test a natural language sentence against current valid mappings.
+        
+        Distinguishes between:
+        1. Fully resolved literal values (e.g. 13.8V, 500 ms)
+        2. Structural template matches with contextual variables (e.g. VariableRef('missing'))
+        3. Syntax/grammar mismatch
+        """
         sentence = sentence.strip()
         if not sentence:
             return {
@@ -286,7 +331,7 @@ class MappingStudioState:
                 'error': 'Leerer Satz eingegeben.',
             }
 
-        valid_dicts = [m.to_dict() for m in self.mappings if m.is_valid]
+        valid_dicts = [m.to_dict() for m in self.mappings if m.is_valid and not m.has_conflict]
         if not valid_dicts:
             return {
                 'success': False,
@@ -309,6 +354,24 @@ class MappingStudioState:
             op_name = mapping.contract.id
             allowed_phases = sorted(mapping.contract.phases)
 
+            # Check if any argument contains a VariableRef (unbound variable outside loop context)
+            var_refs = [v.name for _, v in arguments if isinstance(v, VariableRef)]
+            if var_refs:
+                var_names_str = ", ".join(f"'{v}'" for v in var_refs)
+                return {
+                    'success': True,
+                    'matched': True,
+                    'is_contextual_variable': True,
+                    'variable_names': var_refs,
+                    'mapping_id': mapping.id,
+                    'template': mapping.template,
+                    'operation': op_name,
+                    'arguments': arg_dict,
+                    'allowed_phases': allowed_phases,
+                    'phase_valid': False,
+                    'status_text': f"Satzmuster erkannt; Variable {var_names_str} benötigt einen gültigen Kontext (z.B. Schleife).",
+                }
+
             phase_valid = True
             phase_msg = None
             if phase:
@@ -319,6 +382,7 @@ class MappingStudioState:
             return {
                 'success': True,
                 'matched': True,
+                'is_contextual_variable': False,
                 'mapping_id': mapping.id,
                 'template': mapping.template,
                 'operation': op_name,
@@ -326,6 +390,7 @@ class MappingStudioState:
                 'allowed_phases': allowed_phases,
                 'phase_valid': phase_valid,
                 'phase_msg': phase_msg,
+                'status_text': "Satzmuster erkannt und Parameter vollständig validiert.",
             }
         except SpecError as e:
             return {

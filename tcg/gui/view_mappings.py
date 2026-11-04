@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 )
 
 from tcg.gui.dialog_editor import MappingEditorDialog
+from tcg.gui.facade import CompilationFacade
 from tcg.gui.models import MappingItem, MappingStudioState
 
 
@@ -36,6 +37,7 @@ class MappingsView(QWidget):
         self.state = state
         self.on_change = on_change
         self.current_selected_index: int | None = None
+        self.cached_impacts = {}
 
         self.setup_ui()
         self.refresh()
@@ -49,7 +51,7 @@ class MappingsView(QWidget):
         filter_box = QHBoxLayout()
         filter_box.setSpacing(10)
 
-        filter_box.addWidget(QLabel("🔍 Suche:"))
+        filter_box.addWidget(QLabel("Suche:"))
         self.search_edit = QLineEdit()
         self.search_edit.setPlaceholderText("Nach ID, Satzmuster oder Operation filtern...")
         self.search_edit.textChanged.connect(self.apply_filter)
@@ -63,12 +65,12 @@ class MappingsView(QWidget):
 
         filter_box.addWidget(QLabel("Status:"))
         self.status_filter = QComboBox()
-        self.status_filter.addItems(["Alle Status", "Nur Gültige", "Nur Fehlerhafte"])
+        self.status_filter.addItems(["Alle Status", "Nur Gültige", "Nur Konflikte & Fehler"])
         self.status_filter.currentIndexChanged.connect(self.apply_filter)
         filter_box.addWidget(self.status_filter)
 
-        self.btn_new = QPushButton("➕ Neues Mapping anlegen")
-        self.btn_new.setStyleSheet("background-color: #0d6efd; color: white; font-weight: bold; padding: 6px 14px; border-radius: 4px;")
+        self.btn_new = QPushButton("Neues Mapping anlegen")
+        self.btn_new.setStyleSheet("background-color: #2563eb; color: white; font-weight: bold; padding: 6px 14px; border-radius: 4px;")
         self.btn_new.clicked.connect(self.create_new_mapping)
         filter_box.addWidget(self.btn_new)
 
@@ -128,7 +130,7 @@ class MappingsView(QWidget):
 
         inspector_layout.addWidget(QLabel("<b>Ziel-Operation:</b>"))
         self.insp_op_lbl = QLabel("-")
-        self.insp_op_lbl.setStyleSheet("font-weight: bold; color: #0d6efd;")
+        self.insp_op_lbl.setStyleSheet("font-weight: bold; color: #2563eb;")
         inspector_layout.addWidget(self.insp_op_lbl)
 
         self.insp_phases_lbl = QLabel("-")
@@ -140,26 +142,33 @@ class MappingsView(QWidget):
         self.insp_bindings_lbl.setStyleSheet("background-color: rgba(128,128,128,0.1); padding: 8px; border-radius: 4px; font-family: monospace;")
         inspector_layout.addWidget(self.insp_bindings_lbl)
 
+        # Impact Section
+        inspector_layout.addWidget(QLabel("<b>Verwendung im Projekt:</b>"))
+        self.insp_impact_lbl = QLabel("-")
+        self.insp_impact_lbl.setWordWrap(True)
+        self.insp_impact_lbl.setStyleSheet("background-color: rgba(128,128,128,0.1); padding: 8px; border-radius: 4px; font-size: 11px;")
+        inspector_layout.addWidget(self.insp_impact_lbl)
+
         inspector_layout.addStretch()
 
         # Action Buttons
         btn_box = QVBoxLayout()
         btn_box.setSpacing(6)
 
-        self.btn_edit = QPushButton("✏️ Mapping & Verknüpfung bearbeiten")
+        self.btn_edit = QPushButton("Mapping bearbeiten")
         self.btn_edit.clicked.connect(self.edit_selected_mapping)
         btn_box.addWidget(self.btn_edit)
 
-        self.btn_test = QPushButton("🎯 Im Satzprüfer testen")
+        self.btn_test = QPushButton("Im Satzprüfer testen")
         self.btn_test.clicked.connect(self.send_to_tester)
         btn_box.addWidget(self.btn_test)
 
-        self.btn_duplicate = QPushButton("📋 Duplizieren")
+        self.btn_duplicate = QPushButton("Duplizieren")
         self.btn_duplicate.clicked.connect(self.duplicate_selected_mapping)
         btn_box.addWidget(self.btn_duplicate)
 
-        self.btn_delete = QPushButton("🗑️ Mapping löschen")
-        self.btn_delete.setStyleSheet("color: #dc3545;")
+        self.btn_delete = QPushButton("Mapping löschen")
+        self.btn_delete.setStyleSheet("color: #ef4444;")
         self.btn_delete.clicked.connect(self.delete_selected_mapping)
         btn_box.addWidget(self.btn_delete)
 
@@ -173,8 +182,20 @@ class MappingsView(QWidget):
         self.update_inspector(None)
 
     def refresh(self):
-        """Reload table content from state."""
+        """Reload table content from state and recalculate impact."""
+        self.calculate_impacts()
         self.apply_filter()
+
+    def calculate_impacts(self):
+        """Calculate usage impacts across the project specifications."""
+        specs_files = CompilationFacade.list_spec_files(self.state.profile_config.specs_dir)
+        mapping_dicts = [m.to_dict() for m in self.state.mappings if m.is_valid and not m.has_conflict]
+        self.cached_impacts = CompilationFacade.analyze_impact(
+            specs_files=specs_files,
+            registry=self.state.registry,
+            mapping_dicts=mapping_dicts,
+            profile=self.state.profile,
+        )
 
     def apply_filter(self):
         search_query = self.search_edit.text().lower().strip()
@@ -210,7 +231,18 @@ class MappingsView(QWidget):
             self.filtered_indices.append(original_idx)
 
             # 0. Status
-            status_item = QTableWidgetItem("✅" if item.is_valid else "⚠️")
+            if item.has_conflict:
+                status_text = "Konflikt"
+                status_color = QColor("#ef4444")
+            elif item.is_valid:
+                status_text = "Gültig"
+                status_color = QColor("#10b981")
+            else:
+                status_text = "Fehler"
+                status_color = QColor("#f59e0b")
+
+            status_item = QTableWidgetItem(status_text)
+            status_item.setForeground(status_color)
             status_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             self.table.setItem(row, 0, status_item)
 
@@ -225,7 +257,7 @@ class MappingsView(QWidget):
 
             # 3. Operation
             op_item = QTableWidgetItem(item.operation)
-            op_item.setForeground(QColor("#0d6efd" if item.operation in self.state.registry else "#dc3545"))
+            op_item.setForeground(QColor("#2563eb" if item.operation in self.state.registry else "#ef4444"))
             self.table.setItem(row, 3, op_item)
 
             # 4. Parameters
@@ -270,15 +302,19 @@ class MappingsView(QWidget):
             self.insp_op_lbl.setText("-")
             self.insp_phases_lbl.setText("-")
             self.insp_bindings_lbl.setText("-")
+            self.insp_impact_lbl.setText("-")
             return
 
         self.insp_id_lbl.setText(item.id)
-        if item.is_valid:
-            self.insp_status_lbl.setText("✅ <b>Status:</b> Gültig und einsatzbereit")
-            self.insp_status_lbl.setStyleSheet("color: #198754;")
+        if item.has_conflict:
+            self.insp_status_lbl.setText(f"<b>Status:</b> Konflikt — {item.validation_error}")
+            self.insp_status_lbl.setStyleSheet("color: #ef4444;")
+        elif item.is_valid:
+            self.insp_status_lbl.setText("<b>Status:</b> Gültig und einsatzbereit")
+            self.insp_status_lbl.setStyleSheet("color: #10b981;")
         else:
-            self.insp_status_lbl.setText(f"⚠️ <b>Fehler:</b> {item.validation_error or 'Ungültig'}")
-            self.insp_status_lbl.setStyleSheet("color: #dc3545;")
+            self.insp_status_lbl.setText(f"<b>Status:</b> Fehler — {item.validation_error or 'Ungültig'}")
+            self.insp_status_lbl.setStyleSheet("color: #f59e0b;")
 
         self.insp_template_lbl.setText(item.template)
         self.insp_op_lbl.setText(item.operation)
@@ -287,6 +323,20 @@ class MappingsView(QWidget):
         bindings_lines = [f"• {{{k}}} ➔ <b>{v}</b>" for k, v in item.parameters.items()]
         self.insp_bindings_lbl.setText("<br>".join(bindings_lines) if bindings_lines else "<i>Keine Parameter (statischer Befehl)</i>")
 
+        # Impact display
+        impact = self.cached_impacts.get(item.id)
+        if impact and impact.total_usages > 0:
+            cases_str = ", ".join(sorted(impact.affected_cases)[:3])
+            more_cases = f" und {len(impact.affected_cases) - 3} weitere" if len(impact.affected_cases) > 3 else ""
+            files_count = len(impact.affected_files)
+            self.insp_impact_lbl.setText(
+                f"Dieses Satzmuster wird in <b>{impact.total_usages} Schritten</b> aus "
+                f"<b>{len(impact.affected_cases)} Testfällen</b> ({files_count} Datei(en)) verwendet.<br>"
+                f"<span style='color: #64748b;'>Testfälle: {cases_str}{more_cases}</span>"
+            )
+        else:
+            self.insp_impact_lbl.setText("Wird in den aktuellen Spezifikationen noch nicht verwendet (0 Verwendungen).")
+
     def create_new_mapping(self):
         dialog = MappingEditorDialog(self.state.registry, parent=self)
         if dialog.exec():
@@ -294,7 +344,6 @@ class MappingsView(QWidget):
             self.state.add_mapping(new_item)
             self.on_change()
             self.refresh()
-            # Select the newly added item
             self.search_edit.setText(new_item.id)
 
     def edit_selected_mapping(self):
@@ -327,10 +376,15 @@ class MappingsView(QWidget):
         if self.current_selected_index is None or not (0 <= self.current_selected_index < len(self.state.mappings)):
             return
         item = self.state.mappings[self.current_selected_index]
+        impact = self.cached_impacts.get(item.id)
+        impact_warning = ""
+        if impact and impact.total_usages > 0:
+            impact_warning = f"\n\nACHTUNG: Dieses Mapping wird in {impact.total_usages} Schritten aus {len(impact.affected_cases)} Testfällen verwendet!"
+
         confirm = QMessageBox.question(
             self,
             "Mapping löschen",
-            f"Möchtest du das Mapping '{item.id}' wirklich entfernen?",
+            f"Möchtest du das Mapping '{item.id}' wirklich entfernen?{impact_warning}",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -343,9 +397,7 @@ class MappingsView(QWidget):
         if self.current_selected_index is None or not (0 <= self.current_selected_index < len(self.state.mappings)):
             return
         item = self.state.mappings[self.current_selected_index]
-        # Generate a candidate sentence by replacing placeholders with dummy values
         sample = item.template
         for ph in item.placeholders:
             sample = sample.replace(f"{{{ph}}}", "10")
         self.test_sentence_requested.emit(sample)
-

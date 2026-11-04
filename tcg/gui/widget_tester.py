@@ -35,7 +35,7 @@ class SentenceTesterWidget(QWidget):
 
         # 1. Header & Quick Presets
         header_box = QHBoxLayout()
-        title_lbl = QLabel("<b>🎯 Interaktiver Satzprüfer & Matcher-Playground</b>")
+        title_lbl = QLabel("<b>Satzprüfer & Matcher-Labor</b>")
         title_lbl.setFont(QFont("", 11, QFont.Weight.Bold))
         header_box.addWidget(title_lbl)
 
@@ -47,6 +47,7 @@ class SentenceTesterWidget(QWidget):
         self.preset_combo.addItem("Batteriespannung = 13.8V", "Batteriespannung = 13.8V")
         self.preset_combo.addItem("Versorgung auf 12 V setzen", "Versorgung auf 12 V setzen")
         self.preset_combo.addItem("Warte 500 ms", "Warte 500 ms")
+        self.preset_combo.addItem("Warte missing (Kontextvariable)", "Warte missing")
         self.preset_combo.addItem("Zündung an", "Zündung an")
         self.preset_combo.addItem("Fehlerspeicher BCM1 löschen", "Fehlerspeicher BCM1 löschen")
         self.preset_combo.addItem("Fehlerspeichereintrag DTC00173 eingetragen", "Fehlerspeichereintrag DTC00173 eingetragen")
@@ -76,7 +77,7 @@ class SentenceTesterWidget(QWidget):
         input_box.addWidget(self.phase_combo)
 
         self.btn_test = QPushButton("Satz prüfen")
-        self.btn_test.setStyleSheet("background-color: #0d6efd; color: white; font-weight: bold; padding: 6px 16px; border-radius: 4px;")
+        self.btn_test.setStyleSheet("background-color: #2563eb; color: white; font-weight: bold; padding: 6px 16px; border-radius: 4px;")
         self.btn_test.clicked.connect(self.run_test)
         input_box.addWidget(self.btn_test)
 
@@ -114,7 +115,7 @@ class SentenceTesterWidget(QWidget):
         phase = self.phase_combo.currentData()
 
         if not sentence:
-            self.status_lbl.setText("<span style='color: #888;'>Bitte einen Satz eingeben.</span>")
+            self.status_lbl.setText("<span style='color: #64748b;'>Bitte einen Satz eingeben.</span>")
             self.details_edit.clear()
             return
 
@@ -126,24 +127,50 @@ class SentenceTesterWidget(QWidget):
             tmpl = res['template']
             args = res['arguments']
             phases = res['allowed_phases']
+
+            if res.get('is_contextual_variable'):
+                # Variable context warning as requested by the reviewer
+                status_text = res.get('status_text', "Satzmuster erkannt; Variable benötigt einen gültigen Kontext (z.B. Schleife).")
+                self.status_lbl.setText(
+                    f"<div style='font-size: 13px;'>"
+                    f"<span style='color: #f59e0b; font-weight: bold;'>Hinweis:</span> {status_text}<br>"
+                    f"<b>Mapping:</b> <code>{map_id}</code> (Template: <i>\"{tmpl}\"</i>)<br>"
+                    f"<b>Ziel-Operation:</b> <code>{op_name}</code>"
+                    f"</div>"
+                )
+
+                var_names = ", ".join(f"'{v}'" for v in res.get('variable_names', []))
+                details = [
+                    f"# Satzmuster passt syntaktisch zu Mapping '{map_id}':",
+                    f"# Die Eingabe enthält die Variable(n): {var_names}\n",
+                    f"# WICHTIG:",
+                    f"# Einzelsätze mit Variablen sind keine selbstständig gültigen Testschritte.",
+                    f"# Die Variable {var_names} ist nur innerhalb eines gültigen Schleifenkontexts",
+                    f"# (z.B. 'FOR (missing; [1 s, 2 s]) ... END FOR') zulässig.\n",
+                    f"# Extrahierte Argumente:",
+                ]
+                for k, v in args.items():
+                    details.append(f"  • {k} = {v!r}")
+
+                self.details_edit.setPlainText("\n".join(details))
+                return
+
             phase_valid = res['phase_valid']
             phase_msg = res.get('phase_msg')
 
             # Render summary banner
             if phase_valid:
-                badge_style = "color: #198754; font-weight: bold;"
-                status_icon = "✅"
-                verdict_text = "Erfolgreich aufgelöst & validiert"
+                badge_style = "color: #10b981; font-weight: bold;"
+                verdict_text = "Erfolgreich aufgelöst und Parameter validiert"
             else:
-                badge_style = "color: #dc3545; font-weight: bold;"
-                status_icon = "⚠️"
+                badge_style = "color: #ef4444; font-weight: bold;"
                 verdict_text = f"Phasenkonflikt: {phase_msg}"
 
             self.status_lbl.setText(
                 f"<div style='font-size: 13px;'>"
-                f"{status_icon} <span style='{badge_style}'>{verdict_text}</span><br>"
+                f"<span style='{badge_style}'>{verdict_text}</span><br>"
                 f"<b>Mapping:</b> <code>{map_id}</code> (Template: <i>\"{tmpl}\"</i>)<br>"
-                f"<b>Aufgerufene Operation:</b> <code>{op_name}</code> (Erlaubt: {', '.join(phases)})"
+                f"<b>Aufgerufene Operation:</b> <code>{op_name}</code> (Erlaubte Phasen: {', '.join(phases)})"
                 f"</div>"
             )
 
@@ -161,14 +188,13 @@ class SentenceTesterWidget(QWidget):
         else:
             err = res.get('error', 'Unbekannter Fehler')
             self.status_lbl.setText(
-                f"<div style='color: #dc3545; font-weight: bold;'>"
-                f"❌ Keine Übereinstimmung oder Validierungsfehler:<br>"
-                f"<span style='font-weight: normal; color: #842029;'>{err}</span>"
+                f"<div style='color: #ef4444; font-weight: bold;'>"
+                f"Keine Übereinstimmung oder Validierungsfehler:<br>"
+                f"<span style='font-weight: normal; color: #b91c1c;'>{err}</span>"
                 f"</div>"
             )
             self.details_edit.setPlainText(
                 f"# Fehlermeldung des Mapping-Compilers:\n{err}\n\n"
-                f"# Tipp: Prüfe, ob die Syntax des Satzes exakt mit einem Template übereinstimmt "
+                f"# Hinweis: Prüfe, ob die Syntax des Satzes exakt mit einem Template übereinstimmt "
                 f"oder ob Einheiten / Grenzwerte des Parameters verletzt wurden."
             )
-
