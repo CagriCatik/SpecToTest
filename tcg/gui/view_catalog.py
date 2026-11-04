@@ -219,15 +219,15 @@ class CatalogWorkspace(QWidget):
 
         status_text = f"Gültig verknüpft ({op.valid_mappings_count} Mapping(s))" if op.is_mapped else "Lücke: Noch kein gültiges Satzmuster verknüpft"
         status_color = "#10b981" if op.is_mapped else "#ef4444"
-        self.lbl_op_title.setText(f"<code>{op.name}</code> &nbsp; <span style='color: {status_color}; font-size: 11px;'>[{status_text}]</span>")
+        self.lbl_op_title.setText(f"<code>{op.name}</code>  <span style='color: {status_color}; font-size: 11px;'>[{status_text}]</span>")
         self.lbl_op_doc.setText(op.docstring or "Keine Beschreibung vorhanden.")
 
         req_params = [f"<b>{p}</b>" for p in op.required_parameters]
         opt_params = op.optional_parameters
         param_desc = f"Pflicht: {', '.join(req_params) if req_params else 'keine'}"
         if opt_params:
-            param_desc += f" &nbsp;|&nbsp; Optional: {', '.join(opt_params)}"
-        self.lbl_op_meta.setText(f"Phasen: <code>{', '.join(op.phases)}</code> &nbsp;|&nbsp; Parameter: {param_desc}")
+            param_desc += f" | Optional: {', '.join(opt_params)}"
+        self.lbl_op_meta.setText(f"Phasen: <code>{', '.join(op.phases)}</code> | Parameter: {param_desc}")
 
         # Update templates table
         self.tmpl_table.setRowCount(len(op.linked_mappings))

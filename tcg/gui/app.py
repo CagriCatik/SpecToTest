@@ -119,7 +119,7 @@ class MappingStudioWindow(QMainWindow):
         header_row = QHBoxLayout()
         header_row.setSpacing(10)
 
-        self.lbl_profile_info = QLabel()
+        self.lbl_profile_info = QLabel("SpecToTest")
         self.lbl_profile_info.setFont(QFont("", 11, QFont.Weight.Bold))
         header_row.addWidget(self.lbl_profile_info)
 
@@ -148,6 +148,10 @@ class MappingStudioWindow(QMainWindow):
         det_layout = QHBoxLayout(self.details_frame)
         det_layout.setContentsMargins(10, 6, 10, 6)
         det_layout.setSpacing(16)
+
+        self.lbl_det_profile = QLabel()
+        self.lbl_det_profile.setTextFormat(Qt.TextFormat.RichText)
+        det_layout.addWidget(self.lbl_det_profile)
 
         self.lbl_det_mapping = QLabel()
         self.lbl_det_mapping.setTextFormat(Qt.TextFormat.RichText)
@@ -217,18 +221,19 @@ class MappingStudioWindow(QMainWindow):
         self.apply_theme()
 
     def update_header_stats(self):
-        prof_name = self.state.profile_config.name
         filename = self.state.mapping_file.name if self.state.mapping_file else "Neu.toml"
-        dirty_mark = " (ungespeichert)" if self.state.is_dirty else ""
+        dirty_mark = " *" if self.state.is_dirty else ""
 
-        # Left: Clean project name
-        self.lbl_profile_info.setText(f"{prof_name}{dirty_mark}")
-        self.setWindowTitle(f"SpecToTest Studio — {prof_name} [{filename}{dirty_mark}]")
+        # Left: Clean application name without profile/automotive mentions
+        self.lbl_profile_info.setText(f"SpecToTest{dirty_mark}")
+        self.setWindowTitle(f"SpecToTest{dirty_mark}")
 
         # Collapsible technical details frame
+        prof_name = self.state.profile_config.name
         reg_target = self.state.profile_config.registry_target or "-"
         rf = self.state.profile_config.resources_file
         res_file = Path(rf).name if rf else "-"
+        self.lbl_det_profile.setText(f"<span style='color: #94a3b8;'>Profil:</span> <code>{prof_name}</code>")
         self.lbl_det_mapping.setText(f"<span style='color: #94a3b8;'>Mapping-Datei:</span> <code>{filename}</code>")
         self.lbl_det_registry.setText(f"<span style='color: #94a3b8;'>Registry:</span> <code>{reg_target}</code>")
         self.lbl_det_resources.setText(f"<span style='color: #94a3b8;'>Ressourcen:</span> <code>{res_file}</code>")
@@ -249,7 +254,7 @@ class MappingStudioWindow(QMainWindow):
         if conflicts > 0:
             stat_parts.append(f"<span style='color: #ef4444; font-weight: bold;'>{conflicts} Konflikt(e)</span>")
 
-        self.lbl_stats.setText(" &nbsp;|&nbsp; ".join(stat_parts))
+        self.lbl_stats.setText(" | ".join(stat_parts))
 
         # Update save button styling
         if hasattr(self, 'btn_save_quick'):
@@ -424,7 +429,7 @@ def run_gui(
     if not app:
         app = QApplication(sys.argv)
     
-    app.setApplicationName("SpecToTest Studio")
+    app.setApplicationName("SpecToTest")
     window = MappingStudioWindow(
         project_profile=project_profile,
         registry_target=registry_target,

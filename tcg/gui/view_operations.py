@@ -293,14 +293,14 @@ class OperationsView(QWidget):
         if op_info.linked_mappings:
             lines = []
             for m in op_info.linked_mappings:
-                params_str = ", ".join(f"{k}➔{v}" for k, v in m.parameters.items())
+                params_str = ", ".join(f"{k} -> {v}" for k, v in m.parameters.items())
                 if m.has_conflict:
                     status_lbl = "<span style='color: #ef4444; font-weight: bold;'>[Konflikt]</span>"
                 elif m.is_valid:
                     status_lbl = "<span style='color: #10b981; font-weight: bold;'>[Gültig]</span>"
                 else:
                     status_lbl = "<span style='color: #f59e0b; font-weight: bold;'>[Fehler]</span>"
-                lines.append(f"• {status_lbl} <b>{m.id}</b>: <code>\"{m.template}\"</code><br>&nbsp;&nbsp;&nbsp;<span style='color: #64748b;'>({params_str})</span>")
+                lines.append(f"• {status_lbl} <b>{m.id}</b>: <code>\"{m.template}\"</code><br><span style='margin-left: 14px; color: #64748b;'>({params_str})</span>")
             self.linked_mappings_lbl.setText("<br>".join(lines))
         else:
             self.linked_mappings_lbl.setText(

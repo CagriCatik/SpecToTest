@@ -1074,7 +1074,7 @@ class SpecificationWorkspace(QWidget):
             return
 
         step_num_str = f"Schritt {step_info.step_number}" if step_info.step_number is not None else "Schritt"
-        self.insp_line_lbl.setText(f"Zeile {step_info.line} &nbsp;•&nbsp; {step_num_str} ({step_info.phase})")
+        self.insp_line_lbl.setText(f"Zeile {step_info.line} · {step_num_str} ({step_info.phase})")
 
         self.insp_map_lbl.setText(f"[{step_info.mapping_id}]<br>\"{step_info.template}\"")
         self.insp_op_lbl.setText(step_info.operation_name)
