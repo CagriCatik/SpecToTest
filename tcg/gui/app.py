@@ -5,12 +5,13 @@ import os
 from pathlib import Path
 import sys
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSettings, Qt
 from PySide6.QtGui import QAction, QFont, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QInputDialog,
     QLabel,
@@ -25,7 +26,7 @@ from PySide6.QtWidgets import (
 
 from tcg.gui.models import MappingStudioState
 from tcg.gui.profiles import ProjectProfile, get_builtin_profiles
-from tcg.gui.styles import DARK_THEME_QSS, LIGHT_THEME_QSS
+from tcg.gui.styles import DARK_THEME_QSS, LIGHT_THEME_QSS, get_theme_tokens
 from tcg.gui.toml_io import load_mapping_file, save_mapping_file
 from tcg.gui.view_catalog import CatalogWorkspace
 from tcg.gui.view_specifications import SpecificationWorkspace
@@ -56,12 +57,14 @@ class MappingStudioWindow(QMainWindow):
                 resources_file=resources_file,
             )
 
-        self.setWindowTitle("SpecToTest Studio")
+        self.setWindowTitle("SpecToTest")
+        self.setMinimumSize(960, 560)
         self.resize(1200, 800)
 
         self.setup_ui()
         self.apply_theme()
         self.update_header_stats()
+        self.restore_window_state()
 
     def setup_ui(self):
         # 1. Menu Bar
@@ -133,6 +136,7 @@ class MappingStudioWindow(QMainWindow):
 
         self.lbl_stats = QLabel()
         self.lbl_stats.setTextFormat(Qt.TextFormat.RichText)
+        self.lbl_stats.setMinimumWidth(0)
         header_row.addWidget(self.lbl_stats)
 
         self.btn_save_quick = QPushButton("Mappings speichern")
@@ -141,31 +145,31 @@ class MappingStudioWindow(QMainWindow):
 
         top_vlayout.addLayout(header_row)
 
-        # Collapsible technical details frame
+        # Collapsible technical details frame (compact 2x2 grid)
         self.details_frame = QFrame()
         self.details_frame.setFrameShape(QFrame.Shape.StyledPanel)
         self.details_frame.setVisible(False)
-        det_layout = QHBoxLayout(self.details_frame)
-        det_layout.setContentsMargins(10, 6, 10, 6)
-        det_layout.setSpacing(16)
+        det_grid = QGridLayout(self.details_frame)
+        det_grid.setContentsMargins(12, 8, 12, 8)
+        det_grid.setHorizontalSpacing(24)
+        det_grid.setVerticalSpacing(4)
 
         self.lbl_det_profile = QLabel()
         self.lbl_det_profile.setTextFormat(Qt.TextFormat.RichText)
-        det_layout.addWidget(self.lbl_det_profile)
+        det_grid.addWidget(self.lbl_det_profile, 0, 0)
 
         self.lbl_det_mapping = QLabel()
         self.lbl_det_mapping.setTextFormat(Qt.TextFormat.RichText)
-        det_layout.addWidget(self.lbl_det_mapping)
+        det_grid.addWidget(self.lbl_det_mapping, 0, 1)
 
         self.lbl_det_registry = QLabel()
         self.lbl_det_registry.setTextFormat(Qt.TextFormat.RichText)
-        det_layout.addWidget(self.lbl_det_registry)
+        det_grid.addWidget(self.lbl_det_registry, 1, 0)
 
         self.lbl_det_resources = QLabel()
         self.lbl_det_resources.setTextFormat(Qt.TextFormat.RichText)
-        det_layout.addWidget(self.lbl_det_resources)
+        det_grid.addWidget(self.lbl_det_resources, 1, 1)
 
-        det_layout.addStretch()
         top_vlayout.addWidget(self.details_frame)
 
         # 3. Main Central Workspaces (Tabs)
@@ -213,12 +217,40 @@ class MappingStudioWindow(QMainWindow):
     def apply_theme(self):
         style = DARK_THEME_QSS if self.dark_theme else LIGHT_THEME_QSS
         self.setStyleSheet(style)
-        if hasattr(self, 'workspace_specs') and hasattr(self.workspace_specs, 'highlighter'):
-            self.workspace_specs.highlighter.set_dark_theme(self.dark_theme)
+        if hasattr(self, 'workspace_specs'):
+            self.workspace_specs.set_theme(self.dark_theme)
+        if hasattr(self, 'workspace_catalog'):
+            self.workspace_catalog.set_theme(self.dark_theme)
+        if hasattr(self, 'workspace_tester'):
+            self.workspace_tester.set_theme(self.dark_theme)
+        self.update_header_stats()
 
     def toggle_theme(self):
         self.dark_theme = not self.dark_theme
         self.apply_theme()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.update_header_stats()
+
+    def restore_window_state(self):
+        settings = QSettings("SpecToTest", "Studio")
+        geom = settings.value("geometry")
+        if geom:
+            self.restoreGeometry(geom)
+        if hasattr(self, 'workspace_specs'):
+            self.workspace_specs.restore_splitter_states(settings)
+        if hasattr(self, 'workspace_catalog'):
+            self.workspace_catalog.restore_splitter_states(settings)
+
+    def closeEvent(self, event):
+        settings = QSettings("SpecToTest", "Studio")
+        settings.setValue("geometry", self.saveGeometry())
+        if hasattr(self, 'workspace_specs'):
+            self.workspace_specs.save_splitter_states(settings)
+        if hasattr(self, 'workspace_catalog'):
+            self.workspace_catalog.save_splitter_states(settings)
+        super().closeEvent(event)
 
     def update_header_stats(self):
         filename = self.state.mapping_file.name if self.state.mapping_file else "Neu.toml"
@@ -228,15 +260,17 @@ class MappingStudioWindow(QMainWindow):
         self.lbl_profile_info.setText(f"SpecToTest{dirty_mark}")
         self.setWindowTitle(f"SpecToTest{dirty_mark}")
 
+        tokens = get_theme_tokens(self.dark_theme)
+
         # Collapsible technical details frame
         prof_name = self.state.profile_config.name
         reg_target = self.state.profile_config.registry_target or "-"
         rf = self.state.profile_config.resources_file
         res_file = Path(rf).name if rf else "-"
-        self.lbl_det_profile.setText(f"<span style='color: #94a3b8;'>Profil:</span> <code>{prof_name}</code>")
-        self.lbl_det_mapping.setText(f"<span style='color: #94a3b8;'>Mapping-Datei:</span> <code>{filename}</code>")
-        self.lbl_det_registry.setText(f"<span style='color: #94a3b8;'>Registry:</span> <code>{reg_target}</code>")
-        self.lbl_det_resources.setText(f"<span style='color: #94a3b8;'>Ressourcen:</span> <code>{res_file}</code>")
+        self.lbl_det_profile.setText(f"<span style='color: {tokens['text_secondary']};'>Profil:</span> <code>{prof_name}</code>")
+        self.lbl_det_mapping.setText(f"<span style='color: {tokens['text_secondary']};'>Mapping-Datei:</span> <code>{filename}</code>")
+        self.lbl_det_registry.setText(f"<span style='color: {tokens['text_secondary']};'>Registry:</span> <code>{reg_target}</code>")
+        self.lbl_det_resources.setText(f"<span style='color: {tokens['text_secondary']};'>Ressourcen:</span> <code>{res_file}</code>")
 
         total_maps = len(self.state.mappings)
         valid_maps = sum(1 for m in self.state.mappings if m.is_valid and not m.has_conflict)
@@ -245,14 +279,17 @@ class MappingStudioWindow(QMainWindow):
         mapped_ops = sum(1 for op in self.state.operations.values() if op.is_mapped)
         unmapped_ops = total_ops - mapped_ops
 
+        # Responsive stats text based on window width
+        is_compact = self.width() < 1120
+        ops_label = "Ops" if is_compact else "Operationen mit Satzmuster"
         stat_parts = [
             f"<b>{valid_maps}/{total_maps}</b> Mappings",
-            f"<b>{mapped_ops}/{total_ops}</b> Operationen mit gültigem Satzmuster",
+            f"<b>{mapped_ops}/{total_ops}</b> {ops_label}",
         ]
         if unmapped_ops > 0:
-            stat_parts.append(f"<span style='color: #ef4444;'>({unmapped_ops} Lücken)</span>")
+            stat_parts.append(f"<span style='color: {tokens['error']};'>({unmapped_ops} Lücken)</span>")
         if conflicts > 0:
-            stat_parts.append(f"<span style='color: #ef4444; font-weight: bold;'>{conflicts} Konflikt(e)</span>")
+            stat_parts.append(f"<span style='color: {tokens['error']}; font-weight: bold;'>{conflicts} Konflikt(e)</span>")
 
         self.lbl_stats.setText(" | ".join(stat_parts))
 

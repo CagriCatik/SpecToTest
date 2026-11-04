@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (
 
 from tcg.gui.dialog_editor import MappingEditorDialog
 from tcg.gui.models import MappingItem, MappingStudioState, OperationInfo
-from tcg.gui.styles import get_monospace_font
+from tcg.gui.styles import get_monospace_font, get_theme_tokens
 from tcg.gui.view_mappings import MappingsView
 
 
@@ -70,7 +70,8 @@ class CatalogWorkspace(QWidget):
         layout.setContentsMargins(6, 6, 6, 6)
         layout.setSpacing(10)
 
-        splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.main_splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter = self.main_splitter
 
         # --- LEFT: Operations List ---
         left_panel = QWidget()
@@ -102,7 +103,8 @@ class CatalogWorkspace(QWidget):
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(8)
 
-        right_splitter = QSplitter(Qt.Orientation.Vertical)
+        self.right_splitter = QSplitter(Qt.Orientation.Vertical)
+        right_splitter = self.right_splitter
 
         # 1. Top Section: Contract & Doc
         top_group = QGroupBox("Operationsvertrag & Dokumentation")
@@ -115,7 +117,7 @@ class CatalogWorkspace(QWidget):
 
         self.lbl_op_doc = QLabel("-")
         self.lbl_op_doc.setWordWrap(True)
-        self.lbl_op_doc.setStyleSheet("color: #94a3b8; font-size: 11px;")
+        self.lbl_op_doc.setProperty("doc", "true")
         top_layout.addWidget(self.lbl_op_doc)
 
         self.lbl_op_meta = QLabel("-")
@@ -217,8 +219,9 @@ class CatalogWorkspace(QWidget):
             self.btn_edit_mapping.setEnabled(False)
             return
 
+        tokens = get_theme_tokens(getattr(self, "dark_theme", True))
         status_text = f"Gültig verknüpft ({op.valid_mappings_count} Mapping(s))" if op.is_mapped else "Lücke: Noch kein gültiges Satzmuster verknüpft"
-        status_color = "#10b981" if op.is_mapped else "#ef4444"
+        status_color = tokens["success"] if op.is_mapped else tokens["error"]
         self.lbl_op_title.setText(f"<code>{op.name}</code>  <span style='color: {status_color}; font-size: 11px;'>[{status_text}]</span>")
         self.lbl_op_doc.setText(op.docstring or "Keine Beschreibung vorhanden.")
 
@@ -326,3 +329,27 @@ class CatalogWorkspace(QWidget):
     def on_child_change(self):
         self.refresh()
         self.on_change()
+
+    def set_theme(self, dark_theme: bool):
+        self.dark_theme = dark_theme
+        if hasattr(self, 'lbl_op_doc'):
+            self.lbl_op_doc.style().unpolish(self.lbl_op_doc)
+            self.lbl_op_doc.style().polish(self.lbl_op_doc)
+        if hasattr(self, 'mappings_tab') and hasattr(self.mappings_tab, 'set_theme'):
+            self.mappings_tab.set_theme(dark_theme)
+        if getattr(self, 'current_selected_op', None):
+            self.on_op_selected()
+
+    def save_splitter_states(self, settings):
+        if hasattr(self, 'main_splitter'):
+            settings.setValue("catalog_main_splitter", self.main_splitter.saveState())
+        if hasattr(self, 'right_splitter'):
+            settings.setValue("catalog_right_splitter", self.right_splitter.saveState())
+
+    def restore_splitter_states(self, settings):
+        st1 = settings.value("catalog_main_splitter")
+        if st1 and hasattr(self, 'main_splitter'):
+            self.main_splitter.restoreState(st1)
+        st2 = settings.value("catalog_right_splitter")
+        if st2 and hasattr(self, 'right_splitter'):
+            self.right_splitter.restoreState(st2)

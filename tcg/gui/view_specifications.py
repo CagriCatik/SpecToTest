@@ -5,7 +5,7 @@ from pathlib import Path
 import re
 from typing import Any, Callable
 
-from PySide6.QtCore import QRegularExpression, Qt, QTimer, Signal
+from PySide6.QtCore import QRegularExpression, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QKeySequence, QPalette, QSyntaxHighlighter, QTextCharFormat, QTextCursor
 from PySide6.QtWidgets import (
     QButtonGroup,
@@ -35,9 +35,16 @@ from PySide6.QtWidgets import (
 from tcg.gui.analysis_worker import BackgroundAnalysisManager, InspectionProblem
 from tcg.gui.facade import CompilationError, CompilationFacade, CompilationResult, StepInspectionInfo
 from tcg.gui.models import MappingStudioState
-from tcg.gui.styles import get_monospace_font
+from tcg.gui.styles import get_monospace_font, get_theme_tokens
 from tcg.gui.syntax import SpecSyntaxHighlighter
 from tcg.gui.widget_smart_param import SmartParamWidget, build_smart_param_widget
+
+
+class CompactPathLabel(QLabel):
+    """QLabel that can shrink below its text width without forcing layout expansion."""
+
+    def minimumSizeHint(self) -> QSize:
+        return QSize(40, super().minimumSizeHint().height())
 
 
 def detect_phase_at_cursor(editor: QTextEdit) -> str:
@@ -67,8 +74,10 @@ class SpecFileTreeWidget(QTreeWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setHeaderHidden(True)
-        self.setIndentation(16)
+        self.setIndentation(14)
         self.setAnimated(True)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.setTextElideMode(Qt.TextElideMode.ElideMiddle)
 
     def count(self) -> int:
         """Return total number of file items across all categories for test compatibility."""
@@ -193,7 +202,8 @@ class StepAssistantWidget(QWidget):
         layout.addWidget(self.lbl_verify)
 
         # 6. Action Button
-        self.btn_insert = QPushButton("Schritt in Spezifikation einfügen")
+        self.btn_insert = QPushButton("Schritt einfügen")
+        self.btn_insert.setToolTip("Schritt an Cursor-Position in Spezifikation einfügen")
         self.btn_insert.setProperty("primary", "true")
         self.btn_insert.clicked.connect(self.on_insert_clicked)
         layout.addWidget(self.btn_insert)
@@ -206,6 +216,7 @@ class StepAssistantWidget(QWidget):
         self.current_phase = phase
         is_check = phase in ("EXPECTED_RESULT", "EXPECTED", "CHECK")
         phase_label = "EXPECTED RESULT (Prüfung)" if is_check else f"{phase} (Setup)"
+        self.lbl_phase_badge.setWordWrap(True)
         self.lbl_phase_badge.setText(f"Erkannte Phase: <b>{phase_label}</b>")
         self.lbl_phase_badge.setStyleSheet(
             "border: 1px solid rgba(13, 110, 253, 0.3); background-color: rgba(13, 110, 253, 0.08); padding: 5px 8px; border-radius: 4px;"
@@ -390,10 +401,13 @@ class SpecificationWorkspace(QWidget):
         main_layout.setSpacing(10)
 
         # 3-way Splitter: File Explorer (Left) | Editor (Center) | Translation Inspector & Code (Right)
-        main_splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.main_splitter = QSplitter(Qt.Orientation.Horizontal)
+        main_splitter = self.main_splitter
 
         # --- LEFT: Spec File Explorer ---
-        file_panel = QWidget()
+        self.file_panel = QWidget()
+        file_panel = self.file_panel
+        file_panel.setMinimumWidth(0)
         file_layout = QVBoxLayout(file_panel)
         file_layout.setContentsMargins(0, 0, 0, 0)
         file_layout.setSpacing(6)
@@ -419,6 +433,7 @@ class SpecificationWorkspace(QWidget):
 
         # --- CENTER: Editor & Problem Panel ---
         editor_panel = QWidget()
+        editor_panel.setMinimumWidth(250)
         editor_layout = QVBoxLayout(editor_panel)
         editor_layout.setContentsMargins(0, 0, 0, 0)
         editor_layout.setSpacing(6)
@@ -426,12 +441,19 @@ class SpecificationWorkspace(QWidget):
         editor_top = QHBoxLayout()
         editor_top.setSpacing(8)
 
-        self.lbl_current_file = QLabel("Keine Datei geöffnet")
+        self.btn_toggle_tree = QPushButton("Dateibaum")
+        self.btn_toggle_tree.setCheckable(True)
+        self.btn_toggle_tree.setChecked(True)
+        self.btn_toggle_tree.setToolTip("Dateibaum links ein-/ausblenden")
+        self.btn_toggle_tree.clicked.connect(self.toggle_tree_panel)
+        editor_top.addWidget(self.btn_toggle_tree)
+
+        self.lbl_current_file = CompactPathLabel("Keine Datei geöffnet")
         self.lbl_current_file.setFont(QFont("", 10, QFont.Weight.Bold))
         editor_top.addWidget(self.lbl_current_file, stretch=2)
 
         # Status badge for background analysis
-        self.lbl_analysis_status = QLabel("Bereit")
+        self.lbl_analysis_status = CompactPathLabel("Bereit")
         self.lbl_analysis_status.setFont(QFont("", 9, QFont.Weight.Bold))
         editor_top.addWidget(self.lbl_analysis_status)
 
@@ -448,7 +470,8 @@ class SpecificationWorkspace(QWidget):
         self.btn_toggle_inspector = QPushButton("Inspektor")
         self.btn_toggle_inspector.setCheckable(True)
         self.btn_toggle_inspector.setChecked(True)
-        self.btn_toggle_inspector.clicked.connect(lambda checked: self.right_panel.setVisible(checked))
+        self.btn_toggle_inspector.setToolTip("Rechte Seitenleiste (Inspektor / Assistent / Python) ein-/ausblenden")
+        self.btn_toggle_inspector.clicked.connect(self.toggle_inspector_panel)
         editor_top.addWidget(self.btn_toggle_inspector)
 
         editor_layout.addLayout(editor_top)
@@ -544,6 +567,8 @@ class SpecificationWorkspace(QWidget):
 
         # --- RIGHT: Translation Inspector, Step Assistant & Code Preview ---
         self.right_panel = QTabWidget()
+        self.right_sidebar = self.right_panel
+        self.right_panel.setMinimumWidth(0)
 
         # Tab 1: Details (Schritt-Inspektor)
         step_tab = QWidget()
@@ -551,59 +576,85 @@ class SpecificationWorkspace(QWidget):
         step_layout.setContentsMargins(10, 10, 10, 10)
         step_layout.setSpacing(10)
 
+        # Empty State Container (for headings, blank lines, comments)
+        self.insp_empty_widget = QWidget()
+        empty_layout = QVBoxLayout(self.insp_empty_widget)
+        empty_layout.setContentsMargins(12, 30, 12, 30)
+        empty_layout.setSpacing(10)
+
+        self.lbl_empty_state = QLabel("Wähle eine Testanweisung, um Operation, Parameter und Erwartung anzuzeigen.")
+        self.lbl_empty_state.setWordWrap(True)
+        self.lbl_empty_state.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_empty_state.setProperty("muted", "true")
+        self.lbl_empty_state.setStyleSheet("font-size: 12px; line-height: 1.5;")
+        empty_layout.addStretch()
+        empty_layout.addWidget(self.lbl_empty_state)
+        empty_layout.addStretch()
+        step_layout.addWidget(self.insp_empty_widget)
+
+        # Details Content Container (only shown on actual test steps)
+        self.insp_details_widget = QWidget()
+        self.insp_details_widget.setVisible(False)
+        det_box = QVBoxLayout(self.insp_details_widget)
+        det_box.setContentsMargins(0, 0, 0, 0)
+        det_box.setSpacing(8)
+
         self.insp_line_lbl = QLabel("Wähle eine Zeile im Editor aus")
         self.insp_line_lbl.setFont(QFont("", 11, QFont.Weight.Bold))
-        step_layout.addWidget(self.insp_line_lbl)
+        self.insp_line_lbl.setWordWrap(True)
+        det_box.addWidget(self.insp_line_lbl)
 
         sep1 = QFrame()
         sep1.setFrameShape(QFrame.Shape.HLine)
         sep1.setFrameShadow(QFrame.Shadow.Sunken)
-        step_layout.addWidget(sep1)
+        det_box.addWidget(sep1)
 
-        step_layout.addWidget(QLabel("<b>Zugeordnetes Satzmuster:</b>"))
+        det_box.addWidget(QLabel("<b>Zugeordnetes Satzmuster:</b>"))
         self.insp_map_lbl = QLabel("-")
         self.insp_map_lbl.setFont(get_monospace_font(9))
         self.insp_map_lbl.setWordWrap(True)
         self.insp_map_lbl.setStyleSheet("background-color: rgba(128,128,128,0.1); padding: 6px; border-radius: 4px;")
-        step_layout.addWidget(self.insp_map_lbl)
+        det_box.addWidget(self.insp_map_lbl)
 
-        step_layout.addWidget(QLabel("<b>Aufgerufene Operation:</b>"))
+        det_box.addWidget(QLabel("<b>Aufgerufene Operation:</b>"))
         self.insp_op_lbl = QLabel("-")
-        self.insp_op_lbl.setStyleSheet("font-weight: bold; color: #2563eb;")
-        step_layout.addWidget(self.insp_op_lbl)
+        self.insp_op_lbl.setStyleSheet("font-weight: bold; color: #0d6efd;")
+        det_box.addWidget(self.insp_op_lbl)
 
         self.insp_op_doc = QLabel("-")
         self.insp_op_doc.setWordWrap(True)
-        self.insp_op_doc.setStyleSheet("color: #94a3b8; font-size: 11px;")
-        step_layout.addWidget(self.insp_op_doc)
+        self.insp_op_doc.setProperty("doc", "true")
+        det_box.addWidget(self.insp_op_doc)
 
-        step_layout.addWidget(QLabel("<b>Extrahierte & normalisierte Parameter:</b>"))
+        det_box.addWidget(QLabel("<b>Extrahierte & normalisierte Parameter:</b>"))
         self.insp_params_lbl = QLabel("-")
         self.insp_params_lbl.setFont(get_monospace_font(9))
         self.insp_params_lbl.setWordWrap(True)
         self.insp_params_lbl.setStyleSheet("background-color: rgba(128,128,128,0.1); padding: 6px; border-radius: 4px;")
-        step_layout.addWidget(self.insp_params_lbl)
+        det_box.addWidget(self.insp_params_lbl)
 
         # Action <-> Expectation Link
-        step_layout.addWidget(QLabel("<b>Verknüpfte Aktion / Erwartung:</b>"))
+        det_box.addWidget(QLabel("<b>Verknüpfte Aktion / Erwartung:</b>"))
         self.insp_linked_step_lbl = QLabel("Keine Verknüpfung")
         self.insp_linked_step_lbl.setWordWrap(True)
         self.insp_linked_step_lbl.setStyleSheet("background-color: rgba(128,128,128,0.1); padding: 6px; border-radius: 4px; font-size: 11px;")
-        step_layout.addWidget(self.insp_linked_step_lbl)
+        det_box.addWidget(self.insp_linked_step_lbl)
 
         self.btn_jump_linked = QPushButton("Zur verknüpften Zeile springen")
         self.btn_jump_linked.clicked.connect(self.jump_to_linked_line)
         self.btn_jump_linked.setEnabled(False)
-        step_layout.addWidget(self.btn_jump_linked)
+        det_box.addWidget(self.btn_jump_linked)
 
-        step_layout.addWidget(QLabel("<b>Erzeugter Python-Aufruf:</b>"))
+        det_box.addWidget(QLabel("<b>Erzeugter Python-Aufruf:</b>"))
         self.insp_call_code = QTextEdit()
         self.insp_call_code.setReadOnly(True)
         self.insp_call_code.setFont(get_monospace_font(9))
         self.insp_call_code.setMaximumHeight(80)
-        step_layout.addWidget(self.insp_call_code)
+        det_box.addWidget(self.insp_call_code)
 
-        step_layout.addStretch()
+        det_box.addStretch()
+        step_layout.addWidget(self.insp_details_widget)
+
         self.right_panel.addTab(step_tab, "Details")
         self.right_panel.setTabToolTip(0, "Schritt-Inspektor für die ausgewählte Zeile")
 
@@ -620,6 +671,8 @@ class SpecificationWorkspace(QWidget):
         code_layout.setSpacing(8)
 
         code_header = QLabel("<b>Generierte Python-Testdatei</b> (render_python)")
+        code_header.setWordWrap(True)
+        code_header.setMinimumWidth(0)
         code_layout.addWidget(code_header)
 
         self.code_view = QTextEdit()
@@ -633,10 +686,13 @@ class SpecificationWorkspace(QWidget):
 
         main_splitter.addWidget(self.right_panel)
 
+        main_splitter.setCollapsible(0, True)
+        main_splitter.setCollapsible(1, False)
+        main_splitter.setCollapsible(2, True)
         main_splitter.setStretchFactor(0, 0)
         main_splitter.setStretchFactor(1, 4)
         main_splitter.setStretchFactor(2, 2)
-        main_splitter.setSizes([260, 560, 360])
+        main_splitter.setSizes([240, 560, 320])
 
         main_layout.addWidget(main_splitter)
 
@@ -683,6 +739,7 @@ class SpecificationWorkspace(QWidget):
 
             cat_item = QTreeWidgetItem(self.file_tree)
             cat_item.setText(0, f"{cat_name} ({len(matching)})")
+            cat_item.setToolTip(0, f"Kategorie: {cat_name} ({len(matching)} Datei(en))")
             cat_item.setFont(0, QFont("", 10, QFont.Weight.Bold))
             cat_item.setData(0, Qt.ItemDataRole.UserRole, "")
             cat_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
@@ -691,7 +748,7 @@ class SpecificationWorkspace(QWidget):
             for f in matching:
                 f_item = QTreeWidgetItem(cat_item)
                 f_item.setText(0, f.name)
-                f_item.setToolTip(0, str(f.resolve()))
+                f_item.setToolTip(0, f"{f.name}\n({f.resolve()})")
                 f_item.setData(0, Qt.ItemDataRole.UserRole, str(f.resolve()))
                 if first_file_item is None:
                     first_file_item = f_item
@@ -797,7 +854,8 @@ class SpecificationWorkspace(QWidget):
         self.btn_save_spec.setText("Speichern *")
         self.btn_save_spec.style().unpolish(self.btn_save_spec)
         self.btn_save_spec.style().polish(self.btn_save_spec)
-        self.lbl_analysis_status.setText("<span style='color: #94a3b8;'>Ergebnis veraltet</span>")
+        tokens = get_theme_tokens(getattr(self, "dark_theme", True))
+        self.lbl_analysis_status.setText(f"<span style='color: {tokens['text_muted']};'>Ergebnis veraltet</span>")
         self.lbl_analysis_status.setToolTip("Dokument geändert, Neuübersetzung steht aus")
         self.compile_timer.start()
 
@@ -865,7 +923,8 @@ class SpecificationWorkspace(QWidget):
             return
         if doc_identity and curr_identity and doc_identity != curr_identity:
             return
-        self.lbl_analysis_status.setText("<span style='color: #0d6efd;'>Prüfung läuft...</span>")
+        tokens = get_theme_tokens(getattr(self, "dark_theme", True))
+        self.lbl_analysis_status.setText(f"<span style='color: {tokens['accent']};'>Prüfung läuft...</span>")
         self.lbl_analysis_status.setToolTip(f"Revision {revision} in Bearbeitung...")
 
     def on_doc_analysis_finished(self, result: CompilationResult, doc_identity: str = "", revision: int = 0):
@@ -886,17 +945,19 @@ class SpecificationWorkspace(QWidget):
             return
         if doc_identity and curr_identity and doc_identity != curr_identity:
             return
-        self.lbl_analysis_status.setText("<span style='color: #ef4444;'>Analysefehler</span>")
+        tokens = get_theme_tokens(getattr(self, "dark_theme", True))
+        self.lbl_analysis_status.setText(f"<span style='color: {tokens['error']};'>Analysefehler</span>")
         self.lbl_analysis_status.setToolTip(error_msg)
 
     def apply_doc_result(self, result: CompilationResult, revision: int):
         self.last_compilation_result = result
+        tokens = get_theme_tokens(getattr(self, "dark_theme", True))
         if result.success:
-            self.lbl_analysis_status.setText("<span style='color: #10b981; font-weight: 600;'>Prüfung aktuell</span>")
+            self.lbl_analysis_status.setText(f"<span style='color: {tokens['success']}; font-weight: 600;'>Prüfung aktuell</span>")
             self.lbl_analysis_status.setToolTip(f"Revision {revision} erfolgreich übersetzt")
             self.code_view.setPlainText(result.python_code)
         else:
-            self.lbl_analysis_status.setText("<span style='color: #ef4444; font-weight: 600;'>Prüfung fehlerhaft</span>")
+            self.lbl_analysis_status.setText(f"<span style='color: {tokens['error']}; font-weight: 600;'>Prüfung fehlerhaft</span>")
             self.lbl_analysis_status.setToolTip(f"Revision {revision}: {result.summary}")
             self.code_view.setPlainText(f"# FEHLERHAFTE ÜBERSETZUNG:\n# {result.summary}\n\n{result.python_code}")
 
@@ -1073,6 +1134,12 @@ class SpecificationWorkspace(QWidget):
             self.clear_step_inspector(f"Zeile {current_line}: Kein Testschritt (Überschrift, Kommentar oder Leerzeile)")
             return
 
+        tokens = get_theme_tokens(getattr(self, "dark_theme", True))
+        if hasattr(self, 'insp_empty_widget'):
+            self.insp_empty_widget.setVisible(False)
+        if hasattr(self, 'insp_details_widget'):
+            self.insp_details_widget.setVisible(True)
+
         step_num_str = f"Schritt {step_info.step_number}" if step_info.step_number is not None else "Schritt"
         self.insp_line_lbl.setText(f"Zeile {step_info.line} · {step_num_str} ({step_info.phase})")
 
@@ -1080,7 +1147,7 @@ class SpecificationWorkspace(QWidget):
         self.insp_op_lbl.setText(step_info.operation_name)
         self.insp_op_doc.setText(step_info.operation_doc or "Keine Beschreibung vorhanden.")
 
-        args_lines = [f"• {k} = <b>{v!r}</b> <span style='color: #64748b;'>({type(v).__name__})</span>" for k, v in step_info.arguments.items()]
+        args_lines = [f"• {k} = <b>{v!r}</b> <span style='color: {tokens['text_muted']};'>({type(v).__name__})</span>" for k, v in step_info.arguments.items()]
         self.insp_params_lbl.setText("<br>".join(args_lines) if args_lines else "<i>Keine Parameter</i>")
 
         # Action <-> Expectation Link
@@ -1108,6 +1175,12 @@ class SpecificationWorkspace(QWidget):
             self.goto_line(self.target_jump_line)
 
     def clear_step_inspector(self, text: str):
+        if hasattr(self, 'insp_empty_widget'):
+            self.insp_empty_widget.setVisible(True)
+        if hasattr(self, 'insp_details_widget'):
+            self.insp_details_widget.setVisible(False)
+        if hasattr(self, 'lbl_empty_state'):
+            self.lbl_empty_state.setText("Wähle eine Testanweisung, um Operation, Parameter und Erwartung anzuzeigen.")
         self.insp_line_lbl.setText(text)
         self.insp_map_lbl.setText("-")
         self.insp_op_lbl.setText("-")
@@ -1117,6 +1190,44 @@ class SpecificationWorkspace(QWidget):
         self.btn_jump_linked.setEnabled(False)
         self.target_jump_line = None
         self.insp_call_code.clear()
+
+    def toggle_tree_panel(self, checked: bool):
+        if hasattr(self, 'file_panel'):
+            self.file_panel.setVisible(checked)
+        if hasattr(self, 'btn_toggle_tree'):
+            self.btn_toggle_tree.setChecked(checked)
+
+    def toggle_inspector_panel(self, checked: bool):
+        if hasattr(self, 'right_panel'):
+            self.right_panel.setVisible(checked)
+        if hasattr(self, 'btn_toggle_inspector'):
+            self.btn_toggle_inspector.setChecked(checked)
+
+    def set_theme(self, dark_theme: bool):
+        self.dark_theme = dark_theme
+        if hasattr(self, 'highlighter'):
+            self.highlighter.set_dark_theme(dark_theme)
+        if hasattr(self, 'insp_op_doc'):
+            self.insp_op_doc.style().unpolish(self.insp_op_doc)
+            self.insp_op_doc.style().polish(self.insp_op_doc)
+        if hasattr(self, 'lbl_empty_state'):
+            self.lbl_empty_state.style().unpolish(self.lbl_empty_state)
+            self.lbl_empty_state.style().polish(self.lbl_empty_state)
+        self.on_cursor_position_changed()
+
+    def save_splitter_states(self, settings):
+        if hasattr(self, 'main_splitter'):
+            settings.setValue("specs_main_splitter", self.main_splitter.saveState())
+        if hasattr(self, 'edit_splitter'):
+            settings.setValue("specs_edit_splitter", self.edit_splitter.saveState())
+
+    def restore_splitter_states(self, settings):
+        st1 = settings.value("specs_main_splitter")
+        if st1 and hasattr(self, 'main_splitter'):
+            self.main_splitter.restoreState(st1)
+        st2 = settings.value("specs_edit_splitter")
+        if st2 and hasattr(self, 'edit_splitter'):
+            self.edit_splitter.restoreState(st2)
 
     def insert_statement_at_cursor(self, statement: str):
         cursor = self.editor.textCursor()

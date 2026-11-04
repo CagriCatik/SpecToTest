@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
 
 from tcg.gui.dialog_editor import MappingEditorDialog
 from tcg.gui.models import MappingStudioState, OperationInfo
-from tcg.gui.styles import get_monospace_font
+from tcg.gui.styles import get_monospace_font, get_theme_tokens
 
 
 class OperationsView(QWidget):
@@ -225,7 +225,10 @@ class OperationsView(QWidget):
         else:
             self.update_inspector(None)
 
-    def on_selection_changed(self):
+    def set_theme(self, dark_theme: bool):
+        self.dark_theme = dark_theme
+        if self.current_selected_op_name:
+            self.on_selection_changed()
         selected_rows = self.table.selectionModel().selectedRows()
         if not selected_rows:
             self.update_inspector(None)
@@ -285,22 +288,24 @@ class OperationsView(QWidget):
                 desc += f" ('{t.true_value}' / '{t.false_value}')"
             self.params_table.setItem(r, 1, QTableWidgetItem(desc))
 
+            tokens = get_theme_tokens(getattr(self, "dark_theme", True))
             req_item = QTableWidgetItem("Ja (Pflicht)" if p.required else f"Opt (Default: {p.default})")
-            req_item.setForeground(QColor("#ef4444" if p.required else "#64748b"))
+            req_item.setForeground(QColor(tokens["error"] if p.required else tokens["text_muted"]))
             self.params_table.setItem(r, 2, req_item)
 
         # Populate linked mappings list
         if op_info.linked_mappings:
             lines = []
+            tokens = get_theme_tokens(getattr(self, "dark_theme", True))
             for m in op_info.linked_mappings:
                 params_str = ", ".join(f"{k} -> {v}" for k, v in m.parameters.items())
                 if m.has_conflict:
-                    status_lbl = "<span style='color: #ef4444; font-weight: bold;'>[Konflikt]</span>"
+                    status_lbl = f"<span style='color: {tokens['error']}; font-weight: bold;'>[Konflikt]</span>"
                 elif m.is_valid:
-                    status_lbl = "<span style='color: #10b981; font-weight: bold;'>[Gültig]</span>"
+                    status_lbl = f"<span style='color: {tokens['success']}; font-weight: bold;'>[Gültig]</span>"
                 else:
-                    status_lbl = "<span style='color: #f59e0b; font-weight: bold;'>[Fehler]</span>"
-                lines.append(f"• {status_lbl} <b>{m.id}</b>: <code>\"{m.template}\"</code><br><span style='margin-left: 14px; color: #64748b;'>({params_str})</span>")
+                    status_lbl = f"<span style='color: {tokens['warning']}; font-weight: bold;'>[Fehler]</span>"
+                lines.append(f"• {status_lbl} <b>{m.id}</b>: <code>\"{m.template}\"</code><br><span style='margin-left: 14px; color: {tokens['text_muted']};'>({params_str})</span>")
             self.linked_mappings_lbl.setText("<br>".join(lines))
         else:
             self.linked_mappings_lbl.setText(

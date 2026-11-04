@@ -110,6 +110,15 @@ QGroupBox::title {
     padding: 0 4px;
 }
 
+QLabel[muted="true"] {
+    color: #94a3b8;
+}
+
+QLabel[doc="true"] {
+    color: #94a3b8;
+    font-size: 11px;
+}
+
 QLineEdit, QTextEdit, QComboBox {
     background-color: #2b2b36;
     border: 1px solid #3d3d4d;
@@ -294,6 +303,15 @@ QGroupBox::title {
     subcontrol-position: top left;
     left: 10px;
     padding: 0 4px;
+}
+
+QLabel[muted="true"] {
+    color: #495057;
+}
+
+QLabel[doc="true"] {
+    color: #334155;
+    font-size: 11px;
 }
 
 QLineEdit, QTextEdit, QComboBox {

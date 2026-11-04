@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
 )
 
 from tcg.gui.models import MappingStudioState
-from tcg.gui.styles import get_monospace_font
+from tcg.gui.styles import get_monospace_font, get_theme_tokens
 
 
 class SentenceTesterWidget(QWidget):
@@ -97,10 +97,14 @@ class SentenceTesterWidget(QWidget):
         self.details_edit.setReadOnly(True)
         self.details_edit.setFont(get_monospace_font(9))
         self.details_edit.setMaximumHeight(160)
+        self.details_edit.setVisible(False)
         res_layout.addWidget(self.details_edit)
 
         layout.addWidget(self.result_card)
         layout.addStretch()
+
+    def set_theme(self, dark_theme: bool):
+        self.dark_theme = dark_theme
 
     def on_preset_selected(self):
         txt = self.preset_combo.currentData()
@@ -115,11 +119,15 @@ class SentenceTesterWidget(QWidget):
     def run_test(self):
         sentence = self.sentence_edit.text().strip()
         phase = self.phase_combo.currentData()
+        tokens = get_theme_tokens(getattr(self, "dark_theme", True))
 
         if not sentence:
-            self.status_lbl.setText("<span style='color: #64748b;'>Bitte einen Satz eingeben.</span>")
+            self.status_lbl.setText(f"<span style='color: {tokens['text_muted']};'>Bitte einen Satz eingeben.</span>")
             self.details_edit.clear()
+            self.details_edit.setVisible(False)
             return
+
+        self.details_edit.setVisible(True)
 
         res = self.state.test_sentence(sentence, phase=phase)
 
@@ -162,10 +170,10 @@ class SentenceTesterWidget(QWidget):
 
             # Render summary banner
             if phase_valid:
-                badge_style = "color: #10b981; font-weight: bold;"
+                badge_style = f"color: {tokens['success']}; font-weight: bold;"
                 verdict_text = "Erfolgreich aufgelöst und Parameter validiert"
             else:
-                badge_style = "color: #ef4444; font-weight: bold;"
+                badge_style = f"color: {tokens['error']}; font-weight: bold;"
                 verdict_text = f"Phasenkonflikt: {phase_msg}"
 
             self.status_lbl.setText(
@@ -190,9 +198,9 @@ class SentenceTesterWidget(QWidget):
         else:
             err = res.get('error', 'Unbekannter Fehler')
             self.status_lbl.setText(
-                f"<div style='color: #ef4444; font-weight: bold;'>"
+                f"<div style='color: {tokens['error']}; font-weight: bold;'>"
                 f"Keine Übereinstimmung oder Validierungsfehler:<br>"
-                f"<span style='font-weight: normal; color: #b91c1c;'>{err}</span>"
+                f"<span style='font-weight: normal; color: {tokens['error']};'>{err}</span>"
                 f"</div>"
             )
             self.details_edit.setPlainText(
