@@ -28,7 +28,7 @@ from tcg.runtime.runner import execute, get_bench_factory, write_junit_xml
 
 
 def discover_test_modules(suite_dir: Path) -> list[tuple[str, Path]]:
-    """Finds all generated test scripts (test_*.py) in the suite directory, using the manifest if present."""
+    """Finds all generated test scripts (test_*.py) in the suite directory, strictly using the manifest if present."""
     manifest_file = suite_dir / '.manifest.json'
     if not manifest_file.exists():
         manifest_file = suite_dir / 'manifest.json'
@@ -36,15 +36,21 @@ def discover_test_modules(suite_dir: Path) -> list[tuple[str, Path]]:
     if manifest_file.exists():
         try:
             data = json.loads(manifest_file.read_text(encoding='utf-8'))
-            file_list = data.get('files', [])
-            modules = []
-            for rel in file_list:
-                p = suite_dir / rel
-                if p.is_file() and '__pycache__' not in p.parts:
-                    modules.append((p.stem, p))
-            return sorted(modules, key=lambda item: str(item[1]))
-        except Exception:
-            pass  # Fallback to file search if manifest read fails
+        except Exception as err:
+            raise ValueError(f"Invalid JSON in manifest '{manifest_file}': {err}") from err
+
+        file_list = data.get('files')
+        if not isinstance(file_list, list):
+            raise ValueError(f"Manifest '{manifest_file}' missing required 'files' list")
+
+        modules = []
+        for rel in file_list:
+            p = suite_dir / rel
+            if not p.is_file():
+                raise FileNotFoundError(f"Missing test module listed in manifest: '{rel}'")
+            if '__pycache__' not in p.parts:
+                modules.append((p.stem, p))
+        return sorted(modules, key=lambda item: str(item[1]))
 
     candidates = [p for p in sorted(suite_dir.rglob('test_*.py')) if '__pycache__' not in p.parts]
     modules = []
@@ -100,7 +106,58 @@ def main(argv=None):
     bench_name = getattr(bench_cls, 'BENCH_NAME', f'{args.bench_type} (Simulation)')
 
     # Discover tests
-    test_files = discover_test_modules(suite_dir)
+    try:
+        test_files = discover_test_modules(suite_dir)
+    except Exception as err:
+        exec_logger.error("Fehler bei der Testfall-Erkennung in '%s': %s", suite_dir, err)
+        err_id = "MANIFEST_ERROR" if isinstance(err, ValueError) else "MISSING_TEST_FILE"
+        err_log = TestResult(
+            test_id=err_id,
+            result='ERROR',
+            error=err,
+            duration=0.0,
+            records=[],
+        )
+        err_log.category = 'manifest'
+        all_logs = [err_log]
+        log_test_case_result(exec_logger, err_id, err_log)
+
+        print("=" * 78)
+        print("⚡ SpecToTest — Automatisierter Testbench-Lauf")
+        print("=" * 78)
+        print(f"Prüfstand:   {bench_name}")
+        print(f"Test-Suite:  {suite_dir}")
+        print(f"HTML-Report: {args.html_report}")
+        print(f"Log-Datei:   {log_file_path}")
+        print("-" * 78)
+        print(f" ⚠️ ERROR [manifest   ] {err_id:<38} (Manifestfehler)")
+        print(f"        └─ Error: {err}", file=sys.stderr)
+        print("-" * 78)
+        print("Ergebnis: 0 bestanden, 0 fehlgeschlagen, 1 Fehler (Gesamtdauer: 0.00 s)")
+        print("=" * 78)
+
+        # Generate HTML Report
+        html_path = Path(args.html_report)
+        generate_html_report(all_logs, html_path, bench_type=bench_name)
+        print(f"📊 Interaktiver HTML-Report gespeichert unter: {html_path.resolve()}")
+        print(f"📝 Timestamped Log-Datei gespeichert unter:   {log_file_path.resolve()}")
+
+        # Generate JUnit XML if requested
+        xml_path = Path(args.junit_xml) if args.junit_xml else None
+        if xml_path:
+            write_junit_xml(all_logs, xml_path)
+            print(f"📄 JUnit XML Report gespeichert unter:       {xml_path.resolve()}")
+
+        log_suite_summary(
+            exec_logger,
+            all_logs,
+            0.0,
+            html_report_path=html_path,
+            junit_xml_path=xml_path,
+            log_file_path=log_file_path,
+        )
+        return 2
+
     if not test_files:
         print(f"WARNUNG: Keine Testskripte in '{suite_dir}' gefunden.", file=sys.stderr)
         return 0

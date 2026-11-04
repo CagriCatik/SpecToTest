@@ -372,6 +372,85 @@ class ReviewCounterexamplesModuleTests(BaseTestCase):
             wait_can_signal(bench, signal='VehicleSpeed', value=50, timeout=Decimal('1.0'), interval=Decimal('0.1'))
         self.assertIn("observation completed after timeout", str(ctx.exception))
 
+    def test_manifest_missing_file_reports_error_and_exits_2(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            suite_dir = Path(tmp_dir) / 'generated'
+            suite_dir.mkdir()
+            manifest_path = suite_dir / '.manifest.json'
+            # Manifest references a test file that is missing on disk
+            manifest_path.write_text(
+                '{"version": "1.0", "files": ["test_missing.py"]}',
+                encoding='utf-8'
+            )
+
+            # 1. Programmatic discovery strictly raises FileNotFoundError
+            with self.assertRaises(FileNotFoundError) as ctx:
+                discover_test_modules(suite_dir)
+            self.assertIn("test_missing.py", str(ctx.exception))
+
+            # 2. CLI execution must record an ERROR and return exit code 2
+            xml_path = Path(tmp_dir) / 'junit.xml'
+            html_path = Path(tmp_dir) / 'report.html'
+            exit_code = run_bench.main([
+                '--suite', str(suite_dir),
+                '--junit-xml', str(xml_path),
+                '--html-report', str(html_path),
+                '--log-dir', str(Path(tmp_dir) / 'logs'),
+            ])
+            self.assertEqual(exit_code, 2)
+            self.assertTrue(xml_path.exists())
+            self.assertTrue(html_path.exists())
+
+            xml_content = xml_path.read_text(encoding='utf-8')
+            self.assertIn('errors="1"', xml_content)
+            self.assertIn('test_missing.py', xml_content)
+
+            html_content = html_path.read_text(encoding='utf-8')
+            self.assertIn('ERROR', html_content)
+
+    def test_manifest_invalid_json_reports_error_and_exits_2(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            suite_dir = Path(tmp_dir) / 'generated'
+            suite_dir.mkdir()
+            manifest_path = suite_dir / '.manifest.json'
+            manifest_path.write_text('{ malformed json content here ...', encoding='utf-8')
+
+            # Create stale/foreign files that must NOT be discovered or executed
+            (suite_dir / 'test_stale.py').write_text("# stale\n", encoding='utf-8')
+            (suite_dir / 'test_user.py').write_text("# user\n", encoding='utf-8')
+
+            # 1. Programmatic discovery strictly raises ValueError
+            with self.assertRaises(ValueError) as ctx:
+                discover_test_modules(suite_dir)
+            self.assertIn("Invalid JSON in manifest", str(ctx.exception))
+
+            # 2. CLI execution must record an ERROR and return exit code 2
+            xml_path = Path(tmp_dir) / 'junit.xml'
+            html_path = Path(tmp_dir) / 'report.html'
+            exit_code = run_bench.main([
+                '--suite', str(suite_dir),
+                '--junit-xml', str(xml_path),
+                '--html-report', str(html_path),
+                '--log-dir', str(Path(tmp_dir) / 'logs'),
+            ])
+            self.assertEqual(exit_code, 2)
+
+            xml_content = xml_path.read_text(encoding='utf-8')
+            self.assertIn('errors="1"', xml_content)
+            self.assertIn('MANIFEST_ERROR', xml_content)
+
+    def test_directory_without_manifest_falls_back_to_rglob(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            suite_dir = Path(tmp_dir) / 'generated'
+            suite_dir.mkdir()
+            # No manifest created here
+            test_file = suite_dir / 'test_standalone.py'
+            test_file.write_text("RUNNERS = {}\n", encoding='utf-8')
+
+            discovered = discover_test_modules(suite_dir)
+            self.assertEqual(len(discovered), 1)
+            self.assertEqual(discovered[0][0], 'test_standalone')
+
 
 if __name__ == '__main__':
     unittest.main()

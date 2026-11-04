@@ -150,44 +150,75 @@ def generate_batch(spec_dir: Path, mapping, resources, output_dir: Path, registr
             }
 
         # Phase 2: All specifications compiled and verified without conflict.
-        # Now publish staged files atomically into output_dir.
+        # Publish staged files transactionally into output_dir with rollback on failure.
+        backups = []
+        newly_created = []
+        try:
+            for staged_file, target_file, cases, spec_path, rel_dir in staged_items:
+                target_file.parent.mkdir(parents=True, exist_ok=True)
+                if target_file.exists():
+                    bak = target_file.with_suffix(target_file.suffix + '.atomic_bak')
+                    shutil.copy2(target_file, bak)
+                    backups.append((target_file, bak))
+                else:
+                    newly_created.append(target_file)
+                atomic_tmp = target_file.with_suffix(target_file.suffix + '.publish_tmp')
+                shutil.copy2(staged_file, atomic_tmp)
+                atomic_tmp.replace(target_file)
+
+            # Write generation manifest atomically
+            manifest_data = {
+                'version': '1.0',
+                'generated_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                'files': sorted(new_rel_files),
+                'specs': specs_metadata,
+            }
+            manifest_tmp = manifest_file.with_suffix('.json.publish_tmp')
+            manifest_tmp.write_text(json.dumps(manifest_data, indent=2), encoding='utf-8')
+            manifest_tmp.replace(manifest_file)
+
+            # Clean up stale files tracked by the previous manifest that are no longer part of the suite
+            stale_files = existing_files - set(new_rel_files)
+            for stale_rel in stale_files:
+                stale_path = output_dir / stale_rel
+                if stale_path.is_file():
+                    try:
+                        stale_path.unlink()
+                        # Clean up empty parent directories
+                        parent = stale_path.parent
+                        while parent != output_dir and parent.is_relative_to(output_dir):
+                            parent.rmdir()
+                            parent = parent.parent
+                    except OSError:
+                        pass
+
+            # Successfully published entire batch: clean up backup files
+            for target_file, bak in backups:
+                if bak.exists():
+                    try:
+                        bak.unlink()
+                    except OSError:
+                        pass
+        except Exception:
+            # Transactional rollback: restore all original files and remove newly created files
+            for target_file, bak in backups:
+                if bak.exists():
+                    bak.replace(target_file)
+            for target_file in newly_created:
+                if target_file.exists():
+                    try:
+                        target_file.unlink()
+                    except OSError:
+                        pass
+            raise
+
         for staged_file, target_file, cases, spec_path, rel_dir in staged_items:
-            target_file.parent.mkdir(parents=True, exist_ok=True)
-            atomic_tmp = target_file.with_suffix(target_file.suffix + '.publish_tmp')
-            shutil.copy2(staged_file, atomic_tmp)
-            atomic_tmp.replace(target_file)
             if logger:
                 log_spec_file_start(logger, spec_path, str(rel_dir))
                 src_code = target_file.read_text(encoding='utf-8')
                 for c in cases:
                     log_compiled_case(logger, c, target_file, src_code)
             print(f"Generated {len(cases)} test case(s): {', '.join(c.id for c in cases)} -> {target_file}")
-
-        # Write generation manifest atomically
-        manifest_data = {
-            'version': '1.0',
-            'generated_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
-            'files': sorted(new_rel_files),
-            'specs': specs_metadata,
-        }
-        manifest_tmp = manifest_file.with_suffix('.json.publish_tmp')
-        manifest_tmp.write_text(json.dumps(manifest_data, indent=2), encoding='utf-8')
-        manifest_tmp.replace(manifest_file)
-
-        # Clean up stale files tracked by the previous manifest that are no longer part of the suite
-        stale_files = existing_files - set(new_rel_files)
-        for stale_rel in stale_files:
-            stale_path = output_dir / stale_rel
-            if stale_path.is_file():
-                try:
-                    stale_path.unlink()
-                    # Clean up empty parent directories
-                    parent = stale_path.parent
-                    while parent != output_dir and parent.is_relative_to(output_dir):
-                        parent.rmdir()
-                        parent = parent.parent
-                except OSError:
-                    pass
 
     duration = time.perf_counter() - start_time
     if logger and log_file_path:
