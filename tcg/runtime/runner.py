@@ -1,5 +1,6 @@
 """Composition root and execution engine for running generated tests."""
 import argparse
+import importlib
 import json
 from pathlib import Path
 import sys
@@ -119,7 +120,12 @@ def register_bench_factory(name: str, factory):
 
 
 def get_bench_factory(name: str):
-    """Retrieve registered bench factory by name."""
+    """Retrieve registered bench factory by name or importable module:ClassName."""
+    if ':' in name:
+        mod_name, cls_name = name.split(':', 1)
+        mod = importlib.import_module(mod_name)
+        cls = getattr(mod, cls_name)
+        return cls
     if name not in BENCH_FACTORIES:
         raise ValueError(f'unknown bench factory {name!r}; available: {sorted(BENCH_FACTORIES)}')
     return BENCH_FACTORIES[name]

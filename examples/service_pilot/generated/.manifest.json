@@ -1,0 +1,50 @@
+{
+  "version": "1.0",
+  "generated_at": "2026-11-04T11:16:40.204842+00:00",
+  "files": [
+    "test_tc_01_persistence_after_restart.py",
+    "test_tc_02_fault_injection_data_loss.py",
+    "test_tc_03_data_corruption_detection.py",
+    "test_tc_04_cleanup_and_isolation.py",
+    "test_tc_05_sweep_batch_records.py",
+    "test_tc_06_service_crash_technical_error.py"
+  ],
+  "specs": {
+    "test_tc_01_persistence_after_restart.py": {
+      "spec": "examples/service_pilot/inputs/specs/tc_01_persistence_after_restart.md",
+      "test_ids": [
+        "TC_01_PERSISTENCE_AFTER_RESTART"
+      ]
+    },
+    "test_tc_02_fault_injection_data_loss.py": {
+      "spec": "examples/service_pilot/inputs/specs/tc_02_fault_injection_data_loss.md",
+      "test_ids": [
+        "TC_02_FAULT_INJECTION_DATA_LOSS"
+      ]
+    },
+    "test_tc_03_data_corruption_detection.py": {
+      "spec": "examples/service_pilot/inputs/specs/tc_03_data_corruption_detection.md",
+      "test_ids": [
+        "TC_03_DATA_CORRUPTION_DETECTION"
+      ]
+    },
+    "test_tc_04_cleanup_and_isolation.py": {
+      "spec": "examples/service_pilot/inputs/specs/tc_04_cleanup_and_isolation.md",
+      "test_ids": [
+        "TC_04_CLEANUP_AND_ISOLATION"
+      ]
+    },
+    "test_tc_05_sweep_batch_records.py": {
+      "spec": "examples/service_pilot/inputs/specs/tc_05_sweep_batch_records.md",
+      "test_ids": [
+        "TC_05_SWEEP_BATCH_RECORDS"
+      ]
+    },
+    "test_tc_06_service_crash_technical_error.py": {
+      "spec": "examples/service_pilot/inputs/specs/tc_06_service_crash_technical_error.md",
+      "test_ids": [
+        "TC_06_SERVICE_CRASH_TECHNICAL_ERROR"
+      ]
+    }
+  }
+}

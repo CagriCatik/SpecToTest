@@ -1,0 +1,59 @@
+[[mapping]]
+id = "MAP_WRITE_RECORD"
+template = "Datensatz {schluessel} mit Wert {wert} anlegen"
+operation = "write_record"
+parameters = { schluessel = "key", wert = "value" }
+
+[[mapping]]
+id = "MAP_SET_RECORD"
+template = "Datensatz {schluessel} auf {wert} setzen"
+operation = "write_record"
+parameters = { schluessel = "key", wert = "value" }
+
+[[mapping]]
+id = "MAP_EXPECT_RECORD"
+template = "Datensatz {schluessel} hat Wert {erwartet}"
+operation = "expect_record_value"
+parameters = { schluessel = "key", erwartet = "expected" }
+
+[[mapping]]
+id = "MAP_EXPECT_MISSING"
+template = "Datensatz {schluessel} existiert nicht"
+operation = "expect_record_missing"
+parameters = { schluessel = "key" }
+
+[[mapping]]
+id = "MAP_DELETE_RECORD"
+template = "Datensatz {schluessel} löschen"
+operation = "delete_record"
+parameters = { schluessel = "key" }
+
+[[mapping]]
+id = "MAP_RESTART_SERVICE"
+template = "Dienst neu starten"
+operation = "restart_service"
+parameters = {}
+
+[[mapping]]
+id = "MAP_INJECT_FAULT"
+template = "Fehler {fehler} im Dienst aktivieren"
+operation = "inject_fault"
+parameters = { fehler = "fault_type" }
+
+[[mapping]]
+id = "MAP_CLEAR_FAULTS"
+template = "Dienst-Fehler zurücksetzen"
+operation = "clear_faults"
+parameters = {}
+
+[[mapping]]
+id = "MAP_SERVICE_HEALTH"
+template = "Dienst-Status ist {status}"
+operation = "expect_service_health"
+parameters = { status = "status" }
+
+[[mapping]]
+id = "MAP_WAIT"
+template = "Warte {dauer}"
+operation = "wait"
+parameters = { dauer = "seconds" }

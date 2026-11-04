@@ -24,7 +24,13 @@ from tcg.runtime.execution_logger import (
 )
 from tcg.runtime.html_report import generate_html_report
 from tcg.runtime.result import TestResult
-from tcg.runtime.runner import execute, get_bench_factory, write_junit_xml
+from tcg.runtime.runner import execute, get_bench_factory, register_bench_factory, write_junit_xml
+
+try:
+    from examples.service_pilot.context import ServiceExecutionContext
+    register_bench_factory('service', ServiceExecutionContext)
+except ImportError:
+    pass
 
 
 def load_manifest(suite_dir: Path) -> dict | None:
@@ -166,8 +172,8 @@ def load_module_runners(module_path: Path) -> dict:
 def main(argv=None):
     parser = argparse.ArgumentParser(description='Execute generated test suite on test bench with HTML reporting')
     parser.add_argument('--suite', default='generated', help='Directory containing generated test cases')
-    parser.add_argument('--bench-type', choices=('dummy', 'vector', 'controldesk'), default='vector',
-                        help='Test bench driver/mock (default: vector)')
+    parser.add_argument('--bench-type', default='vector',
+                        help='Test bench driver/mock (default: vector, or registered name / module:ClassName)')
     parser.add_argument('--bench-config', default='inputs/demo_bench.json', help='Test bench configuration JSON')
     parser.add_argument('--resources', default='inputs/resources.json', help='Resources profile JSON')
     parser.add_argument('--html-report', default='reports/test_report.html', help='Path for output HTML report')
@@ -186,10 +192,20 @@ def main(argv=None):
 
     # Load configuration & profile
     profile = load_profile(Path(args.resources))
-    bench_cfg = load_config(Path(args.bench_config), profile)
 
     bench_cls = get_bench_factory(args.bench_type)
     bench_name = getattr(bench_cls, 'BENCH_NAME', f'{args.bench_type} (Simulation)')
+
+    if hasattr(bench_cls, 'load_config'):
+        bench_cfg = bench_cls.load_config(Path(args.bench_config), profile)
+    else:
+        try:
+            bench_cfg = load_config(Path(args.bench_config), profile)
+        except Exception:
+            try:
+                bench_cfg = json.loads(Path(args.bench_config).read_text(encoding='utf-8'))
+            except Exception:
+                bench_cfg = {}
 
     # Discover tests
     try:

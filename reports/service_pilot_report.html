@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SpecToTest — HiL Test Bench Execution Report</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --card-border: #334155;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --pass: #10b981;
+      --pass-bg: rgba(16, 185, 129, 0.15);
+      --fail: #ef4444;
+      --fail-bg: rgba(239, 68, 68, 0.15);
+      --error: #f59e0b;
+      --error-bg: rgba(245, 158, 11, 0.15);
+      --accent: #3b82f6;
+      --accent-hover: #2563eb;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background-color: var(--bg);
+      color: var(--text-main);
+      padding: 24px;
+      line-height: 1.5;
+    }
+    .container { max-width: 1200px; margin: 0 auto; }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 24px;
+      border-bottom: 1px solid var(--card-border);
+      margin-bottom: 24px;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+    h1 { font-size: 24px; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 10px; }
+    .badge {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .badge-pass { background: var(--pass-bg); color: var(--pass); border: 1px solid var(--pass); }
+    .badge-fail { background: var(--fail-bg); color: var(--fail); border: 1px solid var(--fail); }
+    .badge-error { background: var(--error-bg); color: var(--error); border: 1px solid var(--error); }
+    .badge-category { background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid #3b82f6; }
+    .meta-bar { font-size: 13px; color: var(--text-muted); display: flex; gap: 16px; flex-wrap: wrap; }
+
+    /* KPI Cards */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .kpi-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 20px;
+      position: relative;
+      overflow: hidden;
+    }
+    .kpi-card .title { font-size: 13px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; }
+    .kpi-card .val { font-size: 32px; font-weight: 700; margin-top: 6px; }
+    .kpi-card .sub { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+    .kpi-pass .val { color: var(--pass); }
+    .kpi-fail .val { color: var(--fail); }
+    .kpi-error .val { color: var(--error); }
+
+    /* Progress bar */
+    .progress-bar {
+      height: 10px;
+      background: #334155;
+      border-radius: 9999px;
+      overflow: hidden;
+      display: flex;
+      margin-bottom: 24px;
+    }
+    .progress-fill-pass { background: var(--pass); height: 100%; }
+    .progress-fill-fail { background: var(--fail); height: 100%; }
+    .progress-fill-error { background: var(--error); height: 100%; }
+
+    /* Controls */
+    .controls-bar {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+    .filter-buttons { display: flex; gap: 8px; }
+    .btn {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      color: var(--text-main);
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .btn:hover { border-color: var(--accent); }
+    .btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .search-input {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      color: var(--text-main);
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      min-width: 260px;
+      outline: none;
+    }
+    .search-input:focus { border-color: var(--accent); }
+
+    /* Test Case List */
+    .test-list { display: flex; flex-direction: column; gap: 12px; }
+    .test-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      overflow: hidden;
+      transition: border-color 0.15s ease;
+    }
+    .test-card:hover { border-color: #475569; }
+    .test-header {
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      gap: 16px;
+      user-select: none;
+    }
+    .test-title-group { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .test-id { font-size: 15px; font-weight: 600; font-family: monospace; }
+    .test-meta { font-size: 13px; color: var(--text-muted); display: flex; align-items: center; gap: 12px; }
+    .chevron { transition: transform 0.2s ease; color: var(--text-muted); }
+    .test-card.open .chevron { transform: rotate(180deg); }
+
+    /* Details Drawer */
+    .test-body {
+      display: none;
+      padding: 20px;
+      border-top: 1px solid var(--card-border);
+      background: #151f30;
+      font-size: 13px;
+    }
+    .test-card.open .test-body { display: block; }
+    .section-title {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--accent);
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .error-banner {
+      background: var(--fail-bg);
+      border: 1px solid var(--fail);
+      color: #fca5a5;
+      padding: 12px 16px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+      font-family: monospace;
+      font-size: 13px;
+    }
+    pre.spec-box {
+      background: #0b1120;
+      border: 1px solid #1e293b;
+      padding: 14px;
+      border-radius: 8px;
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      font-size: 12px;
+      color: #cbd5e1;
+      white-space: pre-wrap;
+      max-height: 280px;
+      overflow-y: auto;
+      margin-bottom: 16px;
+    }
+
+    /* Trace Table */
+    table.trace-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      margin-top: 8px;
+    }
+    table.trace-table th {
+      text-align: left;
+      padding: 8px 12px;
+      background: #0f172a;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--card-border);
+      font-weight: 600;
+    }
+    table.trace-table td {
+      padding: 7px 12px;
+      border-bottom: 1px solid rgba(51, 65, 85, 0.4);
+      font-family: monospace;
+    }
+    table.trace-table tr:hover td { background: rgba(59, 130, 246, 0.05); }
+    .trace-time { color: var(--accent); width: 100px; }
+    .trace-op { color: #e2e8f0; font-weight: 600; width: 180px; }
+    .trace-details { color: #94a3b8; word-break: break-all; }
+
+    footer {
+      margin-top: 40px;
+      padding-top: 20px;
+      border-top: 1px solid var(--card-border);
+      text-align: center;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div>
+        <h1>
+          <span>⚡</span>
+          <span>SpecToTest — HiL Test Bench Execution Report</span>
+        </h1>
+        <div class="meta-bar" style="margin-top: 6px;">
+          <span>Prüfstands-Adapter: <strong>RecordStore Service Bench</strong></span>
+          <span>•</span>
+          <span>Generiert am: <strong>04.11.2026 12:19:39</strong></span>
+          <span>•</span>
+          <span>Gesamtdauer: <strong>0.050 s</strong></span>
+        </div>
+      </div>
+      <div>
+        <button class="btn" onclick="window.print()">Drucken / PDF</button>
+      </div>
+    </header>
+
+    <!-- KPI Grid -->
+    <div class="kpi-grid">
+      <div class="kpi-card">
+        <div class="title">Testfälle Gesamt</div>
+        <div class="val">6</div>
+        <div class="sub">100% ausgeführt</div>
+      </div>
+      <div class="kpi-card kpi-pass">
+        <div class="title">Erfolgreich (Pass)</div>
+        <div class="val">3</div>
+        <div class="sub">50.0% Erfolgsrate</div>
+      </div>
+      <div class="kpi-card kpi-fail">
+        <div class="title">Fehlgeschlagen (Fail)</div>
+        <div class="val">2</div>
+        <div class="sub">33.3% Check-Fehler</div>
+      </div>
+      <div class="kpi-card kpi-error">
+        <div class="title">Laufzeitfehler (Error)</div>
+        <div class="val">1</div>
+        <div class="sub">Ausnahmen</div>
+      </div>
+    </div>
+
+    <!-- Visual Progress Bar -->
+    <div class="progress-bar">
+      <div class="progress-fill-pass" style="width: 50.0%;"></div>
+      <div class="progress-fill-fail" style="width: 33.33333333333333%;"></div>
+      <div class="progress-fill-error" style="width: 16.666666666666664%;"></div>
+    </div>
+
+    <!-- Controls -->
+    <div class="controls-bar">
+      <div class="filter-buttons">
+        <button class="btn active" onclick="filterTests('all', this)">Alle (6)</button>
+        <button class="btn" onclick="filterTests('PASS', this)">Pass (3)</button>
+        <button class="btn" onclick="filterTests('FAIL', this)">Fail (2)</button>
+        <button class="btn" onclick="filterTests('ERROR', this)">Error (1)</button>
+      </div>
+      <input type="text" id="searchInput" class="search-input" placeholder="Nach Test-ID suchen..." onkeyup="searchTests()">
+    </div>
+
+    <!-- Test List -->
+    <div class="test-list" id="testList">
+      
+    <div class="test-card" data-status="PASS" data-testid="TC_01_PERSISTENCE_AFTER_RESTART" data-category="general">
+      <div class="test-header" onclick="toggleCard(this.parentElement)">
+        <div class="test-title-group">
+          <span class="badge badge-pass">PASS</span>
+          
+          <span class="test-id">TC_01_PERSISTENCE_AFTER_RESTART</span>
+        </div>
+        <div class="test-meta">
+          <span>6 Schritte</span>
+          <span>•</span>
+          <span>0.000 s</span>
+          <span class="chevron">▼</span>
+        </div>
+      </div>
+      <div class="test-body">
+        
+        
+        <div class="section-title">Original-Spezifikation (.md / .txt)</div>
+        <pre class="spec-box">Original Test Specification:
+========================================================================
+Precondition
+10. Dienst neu starten
+20. Dienst-Fehler zurücksetzen
+
+Action
+30. Datensatz USER_SESSION mit Wert &quot;active_session_42&quot; anlegen
+40. Dienst neu starten
+40. Datensatz USER_SESSION hat Wert &quot;active_session_42&quot;
+
+Postcondition
+50. Datensatz USER_SESSION löschen
+========================================================================</pre>
+        
+        
+        <div class="section-title" style="margin-top: 14px;">Prüfstands-Ausführungs-Trace (6 Aktionen)</div>
+        <table class="trace-table">
+          <thead>
+            <tr><th>Sim-Zeit</th><th>Operation</th><th>Parameter / Werte / Status</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class='trace-time'>0.000 s</td><td class='trace-op'>restart_service</td><td class='trace-details'>{&#x27;note&#x27;: &#x27;Reloaded from disk&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>clear_faults</td><td class='trace-details'>{}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>write_record</td><td class='trace-details'>{&#x27;key&#x27;: &#x27;USER_SESSION&#x27;, &#x27;value&#x27;: &#x27;active_session_42&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>restart_service</td><td class='trace-details'>{&#x27;note&#x27;: &#x27;Reloaded from disk&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>expect_record_value</td><td class='trace-details'>{&#x27;key&#x27;: &#x27;USER_SESSION&#x27;, &#x27;expected&#x27;: &#x27;active_session_42&#x27;, &#x27;actual&#x27;: &#x27;active_session_42&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>delete_record</td><td class='trace-details'>{&#x27;key&#x27;: &#x27;USER_SESSION&#x27;, &#x27;existed&#x27;: &#x27;True&#x27;}</td></tr>
+          </tbody>
+        </table>
+        
+      </div>
+    </div>
+    
+    <div class="test-card" data-status="FAIL" data-testid="run_tc_02_fault_injection_data_loss" data-category="general">
+      <div class="test-header" onclick="toggleCard(this.parentElement)">
+        <div class="test-title-group">
+          <span class="badge badge-fail">FAIL</span>
+          
+          <span class="test-id">run_tc_02_fault_injection_data_loss</span>
+        </div>
+        <div class="test-meta">
+          <span>7 Schritte</span>
+          <span>•</span>
+          <span>0.000 s</span>
+          <span class="chevron">▼</span>
+        </div>
+      </div>
+      <div class="test-body">
+        <div class="error-banner"><strong>FEHLER (CheckFailed):</strong> Datensatz &#x27;AUTH_TOKEN&#x27;: erwartet &#x27;secret_token_xyz&#x27;, erhalten &#x27;None&#x27;</div>
+        
+        <div class="section-title">Original-Spezifikation (.md / .txt)</div>
+        <pre class="spec-box">Original Test Specification:
+========================================================================
+Precondition
+10. Dienst neu starten
+20. Fehler DROP_ON_RESTART im Dienst aktivieren
+
+Action
+30. Datensatz AUTH_TOKEN mit Wert &quot;secret_token_xyz&quot; anlegen
+40. Dienst neu starten
+40. Datensatz AUTH_TOKEN hat Wert &quot;secret_token_xyz&quot;
+
+Postcondition
+50. Dienst-Fehler zurücksetzen
+60. Datensatz AUTH_TOKEN löschen
+========================================================================</pre>
+        
+        
+        <div class="section-title" style="margin-top: 14px;">Prüfstands-Ausführungs-Trace (7 Aktionen)</div>
+        <table class="trace-table">
+          <thead>
+            <tr><th>Sim-Zeit</th><th>Operation</th><th>Parameter / Werte / Status</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class='trace-time'>0.000 s</td><td class='trace-op'>restart_service</td><td class='trace-details'>{&#x27;note&#x27;: &#x27;Reloaded from disk&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>inject_fault</td><td class='trace-details'>{&#x27;fault&#x27;: &#x27;DROP_ON_RESTART&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>write_record</td><td class='trace-details'>{&#x27;key&#x27;: &#x27;AUTH_TOKEN&#x27;, &#x27;value&#x27;: &#x27;secret_token_xyz&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>restart_service</td><td class='trace-details'>{&#x27;note&#x27;: &#x27;Reloaded from disk&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>expect_record_value</td><td class='trace-details'>{&#x27;key&#x27;: &#x27;AUTH_TOKEN&#x27;, &#x27;expected&#x27;: &#x27;secret_token_xyz&#x27;, &#x27;actual&#x27;: &#x27;None&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>clear_faults</td><td class='trace-details'>{}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>delete_record</td><td class='trace-details'>{&#x27;key&#x27;: &#x27;AUTH_TOKEN&#x27;, &#x27;existed&#x27;: &#x27;False&#x27;}</td></tr>
+          </tbody>
+        </table>
+        
+      </div>
+    </div>
+    
+    <div class="test-card" data-status="FAIL" data-testid="run_tc_03_data_corruption_detection" data-category="general">
+      <div class="test-header" onclick="toggleCard(this.parentElement)">
+        <div class="test-title-group">
+          <span class="badge badge-fail">FAIL</span>
+          
+          <span class="test-id">run_tc_03_data_corruption_detection</span>
+        </div>
+        <div class="test-meta">
+          <span>6 Schritte</span>
+          <span>•</span>
+          <span>0.000 s</span>
+          <span class="chevron">▼</span>
+        </div>
+      </div>
+      <div class="test-body">
+        <div class="error-banner"><strong>FEHLER (CheckFailed):</strong> Datensatz &#x27;CONFIG_TIMEOUT&#x27;: erwartet &#x27;30&#x27;, erhalten &#x27;30__CORRUPTED&#x27;</div>
+        
+        <div class="section-title">Original-Spezifikation (.md / .txt)</div>
+        <pre class="spec-box">Original Test Specification:
+========================================================================
+Precondition
+10. Dienst-Fehler zurücksetzen
+20. Fehler CORRUPT_DATA im Dienst aktivieren
+
+Action
+30. Datensatz CONFIG_TIMEOUT mit Wert &quot;30&quot; anlegen
+30. Datensatz CONFIG_TIMEOUT hat Wert &quot;30&quot;
+
+Postcondition
+40. Dienst-Fehler zurücksetzen
+50. Datensatz CONFIG_TIMEOUT löschen
+========================================================================</pre>
+        
+        
+        <div class="section-title" style="margin-top: 14px;">Prüfstands-Ausführungs-Trace (6 Aktionen)</div>
+        <table class="trace-table">
+          <thead>
+            <tr><th>Sim-Zeit</th><th>Operation</th><th>Parameter / Werte / Status</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class='trace-time'>0.000 s</td><td class='trace-op'>clear_faults</td><td class='trace-details'>{}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>inject_fault</td><td class='trace-details'>{&#x27;fault&#x27;: &#x27;CORRUPT_DATA&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>write_record</td><td class='trace-details'>{&#x27;key&#x27;: &#x27;CONFIG_TIMEOUT&#x27;, &#x27;value&#x27;: &#x27;30&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>expect_record_value</td><td class='trace-details'>{&#x27;key&#x27;: &#x27;CONFIG_TIMEOUT&#x27;, &#x27;expected&#x27;: &#x27;30&#x27;, &#x27;actual&#x27;: &#x27;30__CORRUPTED&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>clear_faults</td><td class='trace-details'>{}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>delete_record</td><td class='trace-details'>{&#x27;key&#x27;: &#x27;CONFIG_TIMEOUT&#x27;, &#x27;existed&#x27;: &#x27;True&#x27;}</td></tr>
+          </tbody>
+        </table>
+        
+      </div>
+    </div>
+    
+    <div class="test-card" data-status="PASS" data-testid="TC_04_CLEANUP_AND_ISOLATION" data-category="general">
+      <div class="test-header" onclick="toggleCard(this.parentElement)">
+        <div class="test-title-group">
+          <span class="badge badge-pass">PASS</span>
+          
+          <span class="test-id">TC_04_CLEANUP_AND_ISOLATION</span>
+        </div>
+        <div class="test-meta">
+          <span>4 Schritte</span>
+          <span>•</span>
+          <span>0.013 s</span>
+          <span class="chevron">▼</span>
+        </div>
+      </div>
+      <div class="test-body">
+        
+        
+        <div class="section-title">Original-Spezifikation (.md / .txt)</div>
+        <pre class="spec-box">Original Test Specification:
+========================================================================
+Precondition
+10. Dienst-Fehler zurücksetzen
+20. Datensatz TEMP_DATA mit Wert &quot;initial_99&quot; anlegen
+
+Action
+30. Warte 10 ms
+30. Datensatz TEMP_DATA hat Wert &quot;initial_99&quot;
+
+Postcondition
+40. Datensatz TEMP_DATA löschen
+========================================================================</pre>
+        
+        
+        <div class="section-title" style="margin-top: 14px;">Prüfstands-Ausführungs-Trace (4 Aktionen)</div>
+        <table class="trace-table">
+          <thead>
+            <tr><th>Sim-Zeit</th><th>Operation</th><th>Parameter / Werte / Status</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class='trace-time'>0.000 s</td><td class='trace-op'>clear_faults</td><td class='trace-details'>{}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>write_record</td><td class='trace-details'>{&#x27;key&#x27;: &#x27;TEMP_DATA&#x27;, &#x27;value&#x27;: &#x27;initial_99&#x27;}</td></tr><tr><td class='trace-time'>0.013 s</td><td class='trace-op'>expect_record_value</td><td class='trace-details'>{&#x27;key&#x27;: &#x27;TEMP_DATA&#x27;, &#x27;expected&#x27;: &#x27;initial_99&#x27;, &#x27;actual&#x27;: &#x27;initial_99&#x27;}</td></tr><tr><td class='trace-time'>0.013 s</td><td class='trace-op'>delete_record</td><td class='trace-details'>{&#x27;key&#x27;: &#x27;TEMP_DATA&#x27;, &#x27;existed&#x27;: &#x27;True&#x27;}</td></tr>
+          </tbody>
+        </table>
+        
+      </div>
+    </div>
+    
+    <div class="test-card" data-status="PASS" data-testid="TC_05_SWEEP_BATCH_RECORDS" data-category="general">
+      <div class="test-header" onclick="toggleCard(this.parentElement)">
+        <div class="test-title-group">
+          <span class="badge badge-pass">PASS</span>
+          
+          <span class="test-id">TC_05_SWEEP_BATCH_RECORDS</span>
+        </div>
+        <div class="test-meta">
+          <span>7 Schritte</span>
+          <span>•</span>
+          <span>0.036 s</span>
+          <span class="chevron">▼</span>
+        </div>
+      </div>
+      <div class="test-body">
+        
+        
+        <div class="section-title">Original-Spezifikation (.md / .txt)</div>
+        <pre class="spec-box">Original Test Specification:
+========================================================================
+Precondition
+10. Dienst-Fehler zurücksetzen
+
+Action
+20. Datensatz CACHE_KEY_1 mit Wert &quot;batch_val_1&quot; anlegen
+20. Datensatz CACHE_KEY_1 hat Wert &quot;batch_val_1&quot;
+30. Datensatz CACHE_KEY_2 mit Wert &quot;batch_val_2&quot; anlegen
+30. Datensatz CACHE_KEY_2 hat Wert &quot;batch_val_2&quot;
+40: FOR (t;[Decimal(&#x27;0.01&#x27;), Decimal(&#x27;0.02&#x27;)])
+
+Postcondition
+50. Datensatz CACHE_KEY_1 löschen
+60. Datensatz CACHE_KEY_2 löschen
+========================================================================</pre>
+        
+        
+        <div class="section-title" style="margin-top: 14px;">Prüfstands-Ausführungs-Trace (7 Aktionen)</div>
+        <table class="trace-table">
+          <thead>
+            <tr><th>Sim-Zeit</th><th>Operation</th><th>Parameter / Werte / Status</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class='trace-time'>0.000 s</td><td class='trace-op'>clear_faults</td><td class='trace-details'>{}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>write_record</td><td class='trace-details'>{&#x27;key&#x27;: &#x27;CACHE_KEY_1&#x27;, &#x27;value&#x27;: &#x27;batch_val_1&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>expect_record_value</td><td class='trace-details'>{&#x27;key&#x27;: &#x27;CACHE_KEY_1&#x27;, &#x27;expected&#x27;: &#x27;batch_val_1&#x27;, &#x27;actual&#x27;: &#x27;batch_val_1&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>write_record</td><td class='trace-details'>{&#x27;key&#x27;: &#x27;CACHE_KEY_2&#x27;, &#x27;value&#x27;: &#x27;batch_val_2&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>expect_record_value</td><td class='trace-details'>{&#x27;key&#x27;: &#x27;CACHE_KEY_2&#x27;, &#x27;expected&#x27;: &#x27;batch_val_2&#x27;, &#x27;actual&#x27;: &#x27;batch_val_2&#x27;}</td></tr><tr><td class='trace-time'>0.036 s</td><td class='trace-op'>delete_record</td><td class='trace-details'>{&#x27;key&#x27;: &#x27;CACHE_KEY_1&#x27;, &#x27;existed&#x27;: &#x27;True&#x27;}</td></tr><tr><td class='trace-time'>0.037 s</td><td class='trace-op'>delete_record</td><td class='trace-details'>{&#x27;key&#x27;: &#x27;CACHE_KEY_2&#x27;, &#x27;existed&#x27;: &#x27;True&#x27;}</td></tr>
+          </tbody>
+        </table>
+        
+      </div>
+    </div>
+    
+    <div class="test-card" data-status="ERROR" data-testid="run_tc_06_service_crash_technical_error" data-category="general">
+      <div class="test-header" onclick="toggleCard(this.parentElement)">
+        <div class="test-title-group">
+          <span class="badge badge-error">ERROR</span>
+          
+          <span class="test-id">run_tc_06_service_crash_technical_error</span>
+        </div>
+        <div class="test-meta">
+          <span>3 Schritte</span>
+          <span>•</span>
+          <span>0.000 s</span>
+          <span class="chevron">▼</span>
+        </div>
+      </div>
+      <div class="test-body">
+        <div class="error-banner"><strong>FEHLER (ServiceConnectionError):</strong> Connection to RecordStoreService failed (service unavailable/crashed)</div>
+        
+        <div class="section-title">Original-Spezifikation (.md / .txt)</div>
+        <pre class="spec-box">Original Test Specification:
+========================================================================
+Precondition
+10. Dienst-Fehler zurücksetzen
+
+Action
+20. Fehler CRASH_SERVICE im Dienst aktivieren
+30. Datensatz CONFIG_TIMEOUT mit Wert &quot;10&quot; anlegen
+
+Postcondition
+40. Dienst-Fehler zurücksetzen
+========================================================================</pre>
+        
+        
+        <div class="section-title" style="margin-top: 14px;">Prüfstands-Ausführungs-Trace (3 Aktionen)</div>
+        <table class="trace-table">
+          <thead>
+            <tr><th>Sim-Zeit</th><th>Operation</th><th>Parameter / Werte / Status</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class='trace-time'>0.000 s</td><td class='trace-op'>clear_faults</td><td class='trace-details'>{}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>inject_fault</td><td class='trace-details'>{&#x27;fault&#x27;: &#x27;CRASH_SERVICE&#x27;}</td></tr><tr><td class='trace-time'>0.000 s</td><td class='trace-op'>clear_faults</td><td class='trace-details'>{}</td></tr>
+          </tbody>
+        </table>
+        
+      </div>
+    </div>
+    
+    </div>
+
+    <footer>
+      SpecToTest v0.3.0 • Hexagonal Test Case Generator & HiL Testbench Report
+    </footer>
+  </div>
+
+  <script>
+    function toggleCard(card) {
+      card.classList.toggle('open');
+    }
+
+    function filterTests(status, btn) {
+      document.querySelectorAll('.filter-buttons .btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const cards = document.querySelectorAll('.test-card');
+      cards.forEach(card => {
+        if (status === 'all' || card.dataset.status === status) {
+          card.style.display = 'block';
+        } else {
+          card.style.display = 'none';
+        }
+      });
+    }
+
+    function searchTests() {
+      const query = document.getElementById('searchInput').value.toLowerCase();
+      const cards = document.querySelectorAll('.test-card');
+      cards.forEach(card => {
+        const text = (card.dataset.testid + ' ' + (card.dataset.category || '')).toLowerCase();
+        if (text.includes(query)) {
+          card.style.display = 'block';
+        } else {
+          card.style.display = 'none';
+        }
+      });
+    }
+  </script>
+</body>
+</html>

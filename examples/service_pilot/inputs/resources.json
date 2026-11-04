@@ -1,0 +1,28 @@
+{
+  "profile_id": "RECORD_STORE_PROFILE_V1",
+  "resources": {
+    "key": [
+      "USER_SESSION",
+      "CONFIG_TIMEOUT",
+      "AUTH_TOKEN",
+      "CACHE_KEY_1",
+      "CACHE_KEY_2",
+      "CACHE_KEY_3",
+      "TEMP_DATA",
+      "INVALID_KEY"
+    ],
+    "status": [
+      "OK",
+      "HEALTHY",
+      "CRASHED",
+      "DEGRADED"
+    ],
+    "fault_type": [
+      "NONE",
+      "DROP_ON_RESTART",
+      "CORRUPT_DATA",
+      "CRASH_SERVICE",
+      "REJECT_ALL"
+    ]
+  }
+}

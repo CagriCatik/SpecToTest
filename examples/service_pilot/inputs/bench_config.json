@@ -1,0 +1,5 @@
+{
+  "bench_name": "RecordStore Service Bench",
+  "storage_backend": "file",
+  "timeout_s": 5.0
+}
