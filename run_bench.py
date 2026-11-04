@@ -53,7 +53,7 @@ def load_module_runners(module_path: Path) -> dict:
     return getattr(module, 'RUNNERS', {})
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description='Execute generated test suite on test bench with HTML reporting')
     parser.add_argument('--suite', default='generated', help='Directory containing generated test cases')
     parser.add_argument('--bench-type', choices=('dummy', 'vector', 'controldesk'), default='vector',
@@ -64,7 +64,7 @@ def main():
     parser.add_argument('--log-dir', default='logs', help='Directory for timestamped execution logs (default: logs)')
     parser.add_argument('--junit-xml', help='Optional path for JUnit XML report')
     parser.add_argument('--filter', help='Optional substring filter for test case IDs')
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     suite_dir = Path(args.suite)
     if not suite_dir.exists():

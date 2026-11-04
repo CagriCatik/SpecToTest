@@ -11,11 +11,14 @@ Guarantees:
 """
 from decimal import Decimal
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
 
 from generate import derive_output_filename, generate, generate_batch
 from operations.can import wait_can_signal
+import run_bench
 from run_bench import discover_test_modules, load_module_runners
 from tcg.adapters.inbound.text_parser import parse_text_spec
 from tcg.core.compiler import compile_cases
@@ -44,28 +47,78 @@ class ReviewCounterexamplesModuleTests(BaseTestCase):
             compile_cases(sections, self.mappings, self.profile, 'tc_break.txt')
         self.assertIn("references a BREAK statement", str(ctx.exception))
 
+    def test_flaw_1_loop_variable_dimension_preservation_and_order_independence(self):
+        # Case A: Voltage operation first, then timing operation
+        spec_a = """
+        Action
+        10: FOR (v;["1000mV"])
+        20:   Batteriespannung = v
+        30:   Warte v
+        END FOR
+        """
+        sections_a = parse_text_spec(spec_a)
+        with self.assertRaises(SpecError) as ctx_a:
+            compile_cases(sections_a, self.mappings, self.profile, 'tc_mv_time_a.txt')
+        self.assertIn("mV", str(ctx_a.exception))
+        self.assertIn("invalid for parameter 'seconds'", str(ctx_a.exception))
+
+        # Case B: Timing operation first, then voltage operation (must fail with same error)
+        spec_b = """
+        Action
+        10: FOR (v;["1000mV"])
+        20:   Warte v
+        30:   Batteriespannung = v
+        END FOR
+        """
+        sections_b = parse_text_spec(spec_b)
+        with self.assertRaises(SpecError) as ctx_b:
+            compile_cases(sections_b, self.mappings, self.profile, 'tc_mv_time_b.txt')
+        self.assertIn("mV", str(ctx_b.exception))
+        self.assertIn("invalid for parameter 'seconds'", str(ctx_b.exception))
+
+        # Case C: Compatible multiple operations preserve unit conversion and consistency
+        spec_c = """
+        Action
+        10: FOR (v;["13.8V", "12V"])
+        20:   Batteriespannung = v
+        30:   Batteriespannung = v
+        END FOR
+        """
+        sections_c = parse_text_spec(spec_c)
+        cases_c = compile_cases(sections_c, self.mappings, self.profile, 'tc_mv_compat.txt')
+        loop = cases_c[0].steps[0]
+        self.assertEqual(loop.items, (Decimal('13.8'), Decimal('12')))
+
     def test_flaw_2_batch_runner_reports_error_on_broken_module(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             suite_dir = Path(tmp_dir) / 'generated'
             suite_dir.mkdir()
             broken_file = suite_dir / 'test_broken.py'
-            broken_file.write_text("raise RuntimeError('BROKEN MODULE')", encoding='utf-8')
+            broken_file.write_text("raise RuntimeError('BROKEN MODULE')\n", encoding='utf-8')
 
-            discovered = discover_test_modules(suite_dir)
-            self.assertEqual(len(discovered), 1)
+            xml_report = Path(tmp_dir) / 'reports' / 'junit.xml'
+            html_report = Path(tmp_dir) / 'reports' / 'report.html'
+            log_dir = Path(tmp_dir) / 'logs'
 
-            # Test loader handles exception gracefully by returning an error result
-            all_logs = []
-            for _, path in discovered:
-                try:
-                    runners = load_module_runners(path)
-                except Exception as err:
-                    err_res = TestResult(test_id=path.stem.upper(), result='ERROR', error=err)
-                    all_logs.append(err_res)
+            # Run actual batch runner entrypoint with CLI flags
+            exit_code = run_bench.main([
+                '--suite', str(suite_dir),
+                '--junit-xml', str(xml_report),
+                '--html-report', str(html_report),
+                '--log-dir', str(log_dir),
+            ])
 
-            self.assertEqual(len(all_logs), 1)
-            self.assertEqual(all_logs[0].result, 'ERROR')
-            self.assertIn('BROKEN MODULE', str(all_logs[0].error))
+            # Must return exit code 2 indicating an ERROR result
+            self.assertEqual(exit_code, 2)
+            self.assertTrue(xml_report.exists())
+            self.assertTrue(html_report.exists())
+
+            xml_content = xml_report.read_text(encoding='utf-8')
+            self.assertIn('errors="1"', xml_content)
+            self.assertIn('BROKEN MODULE', xml_content)
+
+            html_content = html_report.read_text(encoding='utf-8')
+            self.assertIn('ERROR', html_content)
 
     def test_flaw_3_same_named_specs_in_different_categories_are_both_generated(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -106,6 +159,32 @@ class ReviewCounterexamplesModuleTests(BaseTestCase):
                 generate_batch(spec_root, [MAPPING], RESOURCES, out_root, REGISTRY, RUNNER)
             self.assertIn("Duplicate Test_ID 'TC_DUPLICATE'", str(ctx.exception))
 
+    def test_flaw_3_failed_batch_does_not_modify_existing_output_files(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            spec_root = Path(tmp_dir) / 'inputs'
+            (spec_root / 'a').mkdir(parents=True)
+            (spec_root / 'b').mkdir(parents=True)
+
+            spec_a = spec_root / 'a' / 'tc_01.txt'
+            spec_a.write_text("TESTFALL: TC_DUPLICATE\nNAME: Duplicate Case 1\nAction\n10. Warte 1 s\n", encoding='utf-8')
+
+            spec_b = spec_root / 'b' / 'tc_02.txt'
+            spec_b.write_text("TESTFALL: TC_DUPLICATE\nNAME: Duplicate Case 2\nAction\n10. Warte 1 s\n", encoding='utf-8')
+
+            out_root = Path(tmp_dir) / 'generated'
+            (out_root / 'a').mkdir(parents=True)
+            existing_file = out_root / 'a' / 'test_existing.py'
+            existing_file.write_text("# PREVIOUS VALID FILE CONTENT\n", encoding='utf-8')
+
+            with self.assertRaises(SpecError):
+                generate_batch(spec_root, [MAPPING], RESOURCES, out_root, REGISTRY, RUNNER)
+
+            # Assert that the existing file was NOT modified or replaced
+            self.assertEqual(existing_file.read_text(encoding='utf-8'), "# PREVIOUS VALID FILE CONTENT\n")
+            # And no half-compiled duplicate output files were written
+            self.assertFalse((out_root / 'a' / 'test_tc_01.py').exists())
+            self.assertFalse((out_root / 'b' / 'test_tc_02.py').exists())
+
     def test_flaw_4_unclosed_block_comment_raises_syntax_spec_error(self):
         spec = """
         Action
@@ -127,6 +206,18 @@ class ReviewCounterexamplesModuleTests(BaseTestCase):
         with self.assertRaises(SpecError) as ctx:
             parse_text_spec(spec)
         self.assertIn("unclosed HTML comment", str(ctx.exception))
+
+    def test_flaw_5_variable_starting_with_underscore_is_rejected(self):
+        spec = """
+        Action
+        10: FOR (_op_timing;[1])
+        20:   Warte 1 s
+        30: END FOR
+        """
+        sections = parse_text_spec(spec)
+        with self.assertRaises(SpecError) as ctx:
+            compile_cases(sections, self.mappings, self.profile, 'tc_var_underscore.txt')
+        self.assertIn("cannot start with an underscore", str(ctx.exception))
 
     def test_flaw_5_break_condition_unknown_variable_is_rejected(self):
         spec = """
@@ -207,3 +298,4 @@ class ReviewCounterexamplesModuleTests(BaseTestCase):
 
 if __name__ == '__main__':
     unittest.main()
+

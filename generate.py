@@ -9,7 +9,9 @@ import argparse
 import ast
 import importlib
 from pathlib import Path
+import shutil
 import sys
+import tempfile
 
 from tcg.adapters.inbound.text_parser import read_text_spec
 from tcg.adapters.outbound.python_emitter import render_python
@@ -97,31 +99,50 @@ def generate_batch(spec_dir: Path, mapping, resources, output_dir: Path, registr
     if logger:
         log_batch_header(logger, spec_dir, len(unique_specs), output_dir)
 
-    compiled_cases = []
-    case_sources = {}
-    target_sources = {}
-    total_steps = 0
+    with tempfile.TemporaryDirectory() as staging_dir_str:
+        staging_dir = Path(staging_dir_str)
+        staged_items = []
+        compiled_cases = []
+        case_sources = {}
+        target_sources = {}
+        total_steps = 0
 
-    for (rel_dir, stem), spec_path in sorted(unique_specs.items(), key=lambda x: str(x[1])):
-        out_filename = derive_output_filename(spec_path)
-        out_file = output_dir / rel_dir / out_filename
-        if out_file in target_sources:
-            raise SpecError(
-                f"Output target collision for '{out_file}': targeted by both '{spec_path}' and '{target_sources[out_file]}'"
-            )
-        target_sources[out_file] = spec_path
-        if logger:
-            log_spec_file_start(logger, spec_path, str(rel_dir))
-        cases = generate(spec_path, mapping, resources, out_file, registry, runner_module, logger=logger)
-        for c in cases:
-            if c.id in case_sources:
+        # Phase 1: Compile and validate all specs in a temporary staging directory.
+        # Catches duplicate Test_IDs, syntax errors, target collisions before modifying output_dir.
+        for (rel_dir, stem), spec_path in sorted(unique_specs.items(), key=lambda x: str(x[1])):
+            out_filename = derive_output_filename(spec_path)
+            target_out_file = output_dir / rel_dir / out_filename
+            if target_out_file in target_sources:
                 raise SpecError(
-                    f"Duplicate Test_ID {c.id!r} in '{spec_path}'; already defined in '{case_sources[c.id]}'"
+                    f"Output target collision for '{target_out_file}': targeted by both '{spec_path}' and '{target_sources[target_out_file]}'"
                 )
-            case_sources[c.id] = spec_path
-            total_steps += len(list(c.all_steps()))
-        compiled_cases.extend(cases)
-        print(f"Generated {len(cases)} test case(s): {', '.join(c.id for c in cases)} -> {out_file}")
+            target_sources[target_out_file] = spec_path
+
+            staged_out_file = staging_dir / rel_dir / out_filename
+            cases = generate(spec_path, mapping, resources, staged_out_file, registry, runner_module, logger=None)
+            for c in cases:
+                if c.id in case_sources:
+                    raise SpecError(
+                        f"Duplicate Test_ID {c.id!r} in '{spec_path}'; already defined in '{case_sources[c.id]}'"
+                    )
+                case_sources[c.id] = spec_path
+                total_steps += len(list(c.all_steps()))
+            compiled_cases.extend(cases)
+            staged_items.append((staged_out_file, target_out_file, cases, spec_path, rel_dir))
+
+        # Phase 2: All specifications compiled and verified without conflict.
+        # Now publish staged files atomically into output_dir.
+        for staged_file, target_file, cases, spec_path, rel_dir in staged_items:
+            target_file.parent.mkdir(parents=True, exist_ok=True)
+            atomic_tmp = target_file.with_suffix(target_file.suffix + '.publish_tmp')
+            shutil.copy2(staged_file, atomic_tmp)
+            atomic_tmp.replace(target_file)
+            if logger:
+                log_spec_file_start(logger, spec_path, str(rel_dir))
+                src_code = target_file.read_text(encoding='utf-8')
+                for c in cases:
+                    log_compiled_case(logger, c, target_file, src_code)
+            print(f"Generated {len(cases)} test case(s): {', '.join(c.id for c in cases)} -> {target_file}")
 
     duration = time.perf_counter() - start_time
     if logger and log_file_path:

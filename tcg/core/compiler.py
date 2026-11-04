@@ -74,7 +74,8 @@ def _make_id(prefix, used_ids):
 
 
 def _compile_command(execution_id, requested_phase, test_step, text, line, section,
-                     source_file, mappings, profile, scope=(), loop_vars=None):
+                     source_file, mappings, profile, scope=(),
+                     raw_loop_vars=None, converted_loop_vars=None):
     source = SourceRef(source_file, section, line)
     where = str(source)
     text = single_line_text(text, f'{where} text')
@@ -85,17 +86,19 @@ def _compile_command(execution_id, requested_phase, test_step, text, line, secti
 
     # Verify that any VariableRef used in arguments is defined in the current scope
     # and validate all its possible values against the parameter contract!
-    loop_vars = loop_vars or {}
+    raw_loop_vars = raw_loop_vars or {}
+    converted_loop_vars = converted_loop_vars if converted_loop_vars is not None else {}
     for param_name, param_val in arguments:
         if isinstance(param_val, VariableRef):
             var_name = param_val.name
             if var_name not in scope:
                 raise SpecError(f'{where} ({execution_id}): variable {var_name!r} is undefined; in scope: {sorted(scope)}')
-            if var_name in loop_vars:
+            if var_name in raw_loop_vars:
                 matching_param = next((p for p in mapping.contract.parameters if p.name == param_name), None)
                 if matching_param is not None:
                     converted_items = []
-                    for val in loop_vars[var_name]:
+                    # Always validate the original raw items so dimensions/units are preserved!
+                    for val in raw_loop_vars[var_name]:
                         val_str = str(val)
                         try:
                             conv = matching_param.type.convert(val_str, profile)
@@ -105,7 +108,15 @@ def _compile_command(execution_id, requested_phase, test_step, text, line, secti
                                 f'{where} ({execution_id}): loop variable {var_name!r} value {val!r} '
                                 f'is invalid for parameter {param_name!r}: {err}'
                             ) from None
-                    loop_vars[var_name] = converted_items
+                    # Verify that multiple operations using this variable in the loop are mutually compatible
+                    if var_name in converted_loop_vars:
+                        if converted_loop_vars[var_name] != converted_items:
+                            raise SpecError(
+                                f'{where} ({execution_id}): loop variable {var_name!r} has conflicting '
+                                f'parameter types or conversions across operations in the loop'
+                            )
+                    else:
+                        converted_loop_vars[var_name] = converted_items
 
     if requested_phase is None:
         phases = mapping.contract.phases & FLOW_PHASES
@@ -125,13 +136,15 @@ def _compile_command(execution_id, requested_phase, test_step, text, line, secti
                 mapping.id, source, text)
 
 
-def _compile_loop(data, line, section, phase, source_file, mappings, profile, used_ids, parent_scope=(), parent_loop_vars=None):
+def _compile_loop(data, line, section, phase, source_file, mappings, profile, used_ids,
+                  parent_scope=(), parent_raw_vars=None, parent_conv_vars=None):
     var = data['variable']
     check_loop_variable(var, line, section, source_file, parent_scope)
     scope = set(parent_scope) | {var}
-    loop_vars = parent_loop_vars if parent_loop_vars is not None else {}
-    loop_vars_for_body = dict(loop_vars)
-    loop_vars_for_body[var] = list(data['items'])
+    raw_vars = dict(parent_raw_vars or {})
+    raw_vars[var] = list(data['items'])
+    conv_vars = parent_conv_vars if parent_conv_vars is not None else {}
+    body_conv_vars = dict(conv_vars)
     source = SourceRef(source_file, section, line)
     body_steps = []
     for body_line, body_item in data['body']:
@@ -141,7 +154,8 @@ def _compile_loop(data, line, section, phase, source_file, mappings, profile, us
             prefix = f"{'P' if phase == 'PRECONDITION' else 'C' if phase == 'CLEANUP' else 'S'}{step_label or len(body_steps)+1}"
             exec_id = _make_id(prefix, used_ids)
             step = _compile_command(exec_id, phase, step_label, body_item['Befehl'], body_line,
-                                   section, source_file, mappings, profile, scope=scope, loop_vars=loop_vars_for_body)
+                                   section, source_file, mappings, profile, scope=scope,
+                                   raw_loop_vars=raw_vars, converted_loop_vars=body_conv_vars)
             body_steps.append(step)
         elif item_type == 'break':
             cond = body_item.get('condition')
@@ -153,17 +167,20 @@ def _compile_loop(data, line, section, phase, source_file, mappings, profile, us
             body_steps.append(BreakStatement(condition=cond, step_label=step_label,
                                              source=SourceRef(source_file, section, body_line)))
         elif item_type == 'loop':
-            nested = _compile_loop(body_item, body_line, section, phase, source_file, mappings, profile, used_ids, parent_scope=scope, parent_loop_vars=loop_vars_for_body)
+            nested = _compile_loop(body_item, body_line, section, phase, source_file, mappings, profile, used_ids,
+                                   parent_scope=scope, parent_raw_vars=raw_vars, parent_conv_vars=body_conv_vars)
             body_steps.append(nested)
-    loop_vars.update({k: v for k, v in loop_vars_for_body.items() if k in loop_vars})
-    return Loop(variable=var, items=tuple(loop_vars_for_body.get(var, data['items'])), body=tuple(body_steps),
+    conv_vars.update({k: v for k, v in body_conv_vars.items() if k in conv_vars})
+    loop_items = tuple(body_conv_vars.get(var, raw_vars.get(var, data['items'])))
+    return Loop(variable=var, items=loop_items, body=tuple(body_steps),
                 step_label=data.get('Schritt'), source=source, phase=phase)
 
 
 def _compile_flow_sequence(flow_items, section, phase, source_file, mappings, profile, used_ids,
-                           expected_by_step, parent_scope=(), parent_loop_vars=None):
+                           expected_by_step, parent_scope=(), parent_raw_vars=None, parent_conv_vars=None):
     compiled_nodes = []
-    loop_vars = parent_loop_vars if parent_loop_vars is not None else {}
+    raw_vars = dict(parent_raw_vars or {})
+    conv_vars = parent_conv_vars if parent_conv_vars is not None else {}
     for line, data in flow_items:
         item_type = data.get('type', 'command')
         step_num = data.get('Schritt')
@@ -171,18 +188,21 @@ def _compile_flow_sequence(flow_items, section, phase, source_file, mappings, pr
             if step_num in expected_by_step:
                 exec_id = _make_id(f'S{step_num}.A' if step_num is not None else f'S{len(compiled_nodes)+1}.A', used_ids)
                 action_step = _compile_command(exec_id, 'ACTION', step_num, data['Befehl'], line,
-                                               section, source_file, mappings, profile, scope=parent_scope, loop_vars=loop_vars)
+                                               section, source_file, mappings, profile, scope=parent_scope,
+                                               raw_loop_vars=raw_vars, converted_loop_vars=conv_vars)
                 compiled_nodes.append(action_step)
                 for exp_line, exp_data in expected_by_step[step_num]:
                     exp_exec_id = _make_id(f'S{step_num}.E' if step_num is not None else f'S{len(compiled_nodes)+1}.E', used_ids)
                     exp_step = _compile_command(exp_exec_id, 'EXPECTED', step_num, exp_data['Befehl'], exp_line,
-                                                'Erwartungen', source_file, mappings, profile, scope=parent_scope, loop_vars=loop_vars)
+                                                'Erwartungen', source_file, mappings, profile, scope=parent_scope,
+                                                raw_loop_vars=raw_vars, converted_loop_vars=conv_vars)
                     compiled_nodes.append(exp_step)
                 del expected_by_step[step_num]
             else:
                 exec_id = _make_id(f'S{step_num}' if step_num is not None else f'S{len(compiled_nodes)+1}', used_ids)
                 action_step = _compile_command(exec_id, None, step_num, data['Befehl'], line,
-                                               section, source_file, mappings, profile, scope=parent_scope, loop_vars=loop_vars)
+                                               section, source_file, mappings, profile, scope=parent_scope,
+                                               raw_loop_vars=raw_vars, converted_loop_vars=conv_vars)
                 compiled_nodes.append(action_step)
 
         elif item_type == 'break':
@@ -199,21 +219,24 @@ def _compile_flow_sequence(flow_items, section, phase, source_file, mappings, pr
             var = data['variable']
             check_loop_variable(var, line, section, source_file, parent_scope)
             loop_scope = set(parent_scope) | {var}
-            loop_vars_for_body = dict(loop_vars)
-            loop_vars_for_body[var] = list(data['items'])
+            body_raw_vars = dict(raw_vars)
+            body_raw_vars[var] = list(data['items'])
+            body_conv_vars = dict(conv_vars)
             source = SourceRef(source_file, section, line)
             body_nodes = _compile_flow_sequence(data['body'], section, phase, source_file, mappings,
                                                 profile, used_ids, expected_by_step, parent_scope=loop_scope,
-                                                parent_loop_vars=loop_vars_for_body)
-            loop_vars.update({k: v for k, v in loop_vars_for_body.items() if k in loop_vars})
-            loop_node = Loop(variable=var, items=tuple(loop_vars_for_body.get(var, data['items'])),
+                                                parent_raw_vars=body_raw_vars, parent_conv_vars=body_conv_vars)
+            conv_vars.update({k: v for k, v in body_conv_vars.items() if k in conv_vars})
+            loop_items = tuple(body_conv_vars.get(var, body_raw_vars.get(var, data['items'])))
+            loop_node = Loop(variable=var, items=loop_items,
                              body=tuple(body_nodes), step_label=step_num, source=source, phase=phase)
             compiled_nodes.append(loop_node)
             if step_num in expected_by_step:
                 for exp_line, exp_data in expected_by_step[step_num]:
                     exp_exec_id = _make_id(f'S{step_num}.E' if step_num is not None else f'S{len(compiled_nodes)+1}.E', used_ids)
                     exp_step = _compile_command(exp_exec_id, 'EXPECTED', step_num, exp_data['Befehl'], exp_line,
-                                                'Erwartungen', source_file, mappings, profile, scope=parent_scope, loop_vars=loop_vars)
+                                                'Erwartungen', source_file, mappings, profile, scope=parent_scope,
+                                                raw_loop_vars=raw_vars, converted_loop_vars=conv_vars)
                     compiled_nodes.append(exp_step)
                 del expected_by_step[step_num]
 

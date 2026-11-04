@@ -87,6 +87,11 @@ def validate_expectations(expected_rows, action_index, precond_steps, cleanup_st
 
 def check_loop_variable(var_name, line, section, source_file, parent_scope=()):
     """Validate that loop variable is valid, not reserved, and not shadowing an outer loop variable."""
+    if var_name.startswith('_'):
+        raise SpecError(
+            f"{source_file}:{line} [{section}]: loop variable {var_name!r} is invalid; "
+            f"specification variable names cannot start with an underscore ('_')"
+        )
     if var_name in parent_scope:
         raise SpecError(
             f'{source_file}:{line} [{section}]: loop variable {var_name!r} shadows an outer loop variable; '
