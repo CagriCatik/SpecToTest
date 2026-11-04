@@ -1,1 +1,5 @@
-# No third-party runtime dependencies; TOML support comes from Python 3.11+.
+# SpecToTest Core & Testrunner: Pure Python Standard Library (Python 3.11+)
+# No third-party runtime dependencies required for compiling and running test benches.
+
+# Optional Interactive Desktop GUI (PySide6 / Qt):
+PySide6-Essentials>=6.5.0
