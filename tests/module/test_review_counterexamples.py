@@ -10,6 +10,7 @@ Guarantees:
 7. CAN wait operations fail if the observation completes after the timeout deadline.
 """
 from decimal import Decimal
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -450,6 +451,143 @@ class ReviewCounterexamplesModuleTests(BaseTestCase):
             discovered = discover_test_modules(suite_dir)
             self.assertEqual(len(discovered), 1)
             self.assertEqual(discovered[0][0], 'test_standalone')
+
+    def test_manifest_missing_runner_entry_reports_error_and_exits_2(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            suite_dir = Path(tmp_dir) / 'generated'
+            suite_dir.mkdir()
+            manifest_path = suite_dir / '.manifest.json'
+            manifest_data = {
+                "version": "1.0",
+                "files": ["test_multi.py"],
+                "specs": {
+                    "test_multi.py": {
+                        "spec": "inputs/multi.md",
+                        "test_ids": ["TC_A", "TC_B"]
+                    }
+                }
+            }
+            manifest_path.write_text(json.dumps(manifest_data), encoding='utf-8')
+
+            test_file = suite_dir / 'test_multi.py'
+            test_file.write_text(
+                "def runner_a(bench): pass\n"
+                "runner_a.test_id = 'TC_A'\n"
+                "RUNNERS = {'TC_A': runner_a}\n",  # TC_B is omitted from RUNNERS
+                encoding='utf-8'
+            )
+
+            xml_path = Path(tmp_dir) / 'junit.xml'
+            html_path = Path(tmp_dir) / 'report.html'
+            exit_code = run_bench.main([
+                '--suite', str(suite_dir),
+                '--junit-xml', str(xml_path),
+                '--html-report', str(html_path),
+                '--log-dir', str(Path(tmp_dir) / 'logs'),
+            ])
+            self.assertEqual(exit_code, 2)
+            self.assertTrue(xml_path.exists())
+            self.assertTrue(html_path.exists())
+
+            xml_content = xml_path.read_text(encoding='utf-8')
+            self.assertIn('errors="1"', xml_content)
+            self.assertIn('name="TC_B"', xml_content)
+            self.assertIn('missing from test_multi.py RUNNERS', xml_content)
+            self.assertIn('name="TC_A"', xml_content)
+
+            html_content = html_path.read_text(encoding='utf-8')
+            self.assertIn('ERROR', html_content)
+            self.assertIn('TC_B', html_content)
+            self.assertIn('TC_A', html_content)
+
+            # Also verify that applying --filter still detects missing TC_B before filter
+            exit_code_filter = run_bench.main([
+                '--suite', str(suite_dir),
+                '--filter', 'TC_A',
+                '--junit-xml', str(xml_path),
+                '--html-report', str(html_path),
+                '--log-dir', str(Path(tmp_dir) / 'logs'),
+            ])
+            self.assertEqual(exit_code_filter, 2)
+
+    def test_manifest_extra_runner_entry_reports_error_and_exits_2(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            suite_dir = Path(tmp_dir) / 'generated'
+            suite_dir.mkdir()
+            manifest_path = suite_dir / '.manifest.json'
+            manifest_data = {
+                "version": "1.0",
+                "files": ["test_single.py"],
+                "specs": {
+                    "test_single.py": {
+                        "spec": "inputs/single.md",
+                        "test_ids": ["TC_A"]
+                    }
+                }
+            }
+            manifest_path.write_text(json.dumps(manifest_data), encoding='utf-8')
+
+            test_file = suite_dir / 'test_single.py'
+            test_file.write_text(
+                "def runner_a(bench): pass\n"
+                "runner_a.test_id = 'TC_A'\n"
+                "def runner_extra(bench): pass\n"
+                "runner_extra.test_id = 'TC_EXTRA'\n"
+                "RUNNERS = {'TC_A': runner_a, 'TC_EXTRA': runner_extra}\n",
+                encoding='utf-8'
+            )
+
+            xml_path = Path(tmp_dir) / 'junit.xml'
+            html_path = Path(tmp_dir) / 'report.html'
+            exit_code = run_bench.main([
+                '--suite', str(suite_dir),
+                '--junit-xml', str(xml_path),
+                '--html-report', str(html_path),
+                '--log-dir', str(Path(tmp_dir) / 'logs'),
+            ])
+            self.assertEqual(exit_code, 2)
+            xml_content = xml_path.read_text(encoding='utf-8')
+            self.assertIn('errors="1"', xml_content)
+            self.assertIn('TC_EXTRA', xml_content)
+            self.assertIn('Unexpected test case ID', xml_content)
+
+    def test_duplicate_runner_test_id_across_modules_reports_error_and_exits_2(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            suite_dir = Path(tmp_dir) / 'generated'
+            suite_dir.mkdir()
+            manifest_path = suite_dir / '.manifest.json'
+            manifest_data = {
+                "version": "1.0",
+                "files": ["test_one.py", "test_two.py"],
+            }
+            manifest_path.write_text(json.dumps(manifest_data), encoding='utf-8')
+
+            (suite_dir / 'test_one.py').write_text(
+                "def runner(bench): pass\n"
+                "runner.test_id = 'TC_DUP'\n"
+                "RUNNERS = {'TC_DUP': runner}\n",
+                encoding='utf-8'
+            )
+            (suite_dir / 'test_two.py').write_text(
+                "def runner(bench): pass\n"
+                "runner.test_id = 'TC_DUP'\n"
+                "RUNNERS = {'TC_DUP': runner}\n",
+                encoding='utf-8'
+            )
+
+            xml_path = Path(tmp_dir) / 'junit.xml'
+            html_path = Path(tmp_dir) / 'report.html'
+            exit_code = run_bench.main([
+                '--suite', str(suite_dir),
+                '--junit-xml', str(xml_path),
+                '--html-report', str(html_path),
+                '--log-dir', str(Path(tmp_dir) / 'logs'),
+            ])
+            self.assertEqual(exit_code, 2)
+            xml_content = xml_path.read_text(encoding='utf-8')
+            self.assertIn('errors="1"', xml_content)
+            self.assertIn('TC_DUP', xml_content)
+            self.assertIn('Duplicate test case ID', xml_content)
 
 
 if __name__ == '__main__':

@@ -27,20 +27,28 @@ from tcg.runtime.result import TestResult
 from tcg.runtime.runner import execute, get_bench_factory, write_junit_xml
 
 
-def discover_test_modules(suite_dir: Path) -> list[tuple[str, Path]]:
-    """Finds all generated test scripts (test_*.py) in the suite directory, strictly using the manifest if present."""
+def load_manifest(suite_dir: Path) -> dict | None:
+    """Loads and parses .manifest.json or manifest.json if present."""
     manifest_file = suite_dir / '.manifest.json'
     if not manifest_file.exists():
         manifest_file = suite_dir / 'manifest.json'
 
-    if manifest_file.exists():
-        try:
-            data = json.loads(manifest_file.read_text(encoding='utf-8'))
-        except Exception as err:
-            raise ValueError(f"Invalid JSON in manifest '{manifest_file}': {err}") from err
+    if not manifest_file.exists():
+        return None
 
+    try:
+        return json.loads(manifest_file.read_text(encoding='utf-8'))
+    except Exception as err:
+        raise ValueError(f"Invalid JSON in manifest '{manifest_file}': {err}") from err
+
+
+def discover_test_modules(suite_dir: Path) -> list[tuple[str, Path]]:
+    """Finds all generated test scripts (test_*.py) in the suite directory, strictly using the manifest if present."""
+    data = load_manifest(suite_dir)
+    if data is not None:
         file_list = data.get('files')
         if not isinstance(file_list, list):
+            manifest_file = suite_dir / '.manifest.json' if (suite_dir / '.manifest.json').exists() else suite_dir / 'manifest.json'
             raise ValueError(f"Manifest '{manifest_file}' missing required 'files' list")
 
         modules = []
@@ -107,7 +115,25 @@ def main(argv=None):
 
     # Discover tests
     try:
+        manifest_data = load_manifest(suite_dir)
         test_files = discover_test_modules(suite_dir)
+        manifest_specs = None
+        if manifest_data is not None and 'specs' in manifest_data:
+            raw_specs = manifest_data.get('specs')
+            if not isinstance(raw_specs, dict):
+                manifest_file = suite_dir / '.manifest.json' if (suite_dir / '.manifest.json').exists() else suite_dir / 'manifest.json'
+                raise ValueError(f"Manifest '{manifest_file}' missing valid 'specs' dictionary")
+            manifest_specs = {Path(k).as_posix(): v for k, v in raw_specs.items()}
+            # Check for duplicate Test_IDs across specs within the manifest
+            manifest_seen_ids = {}
+            for rel_file, spec_info in manifest_specs.items():
+                tids = spec_info.get('test_ids', []) if isinstance(spec_info, dict) else (spec_info if isinstance(spec_info, list) else [])
+                for tid in tids:
+                    if tid in manifest_seen_ids:
+                        raise ValueError(
+                            f"Duplicate test case ID '{tid}' declared in manifest across '{manifest_seen_ids[tid]}' and '{rel_file}'"
+                        )
+                    manifest_seen_ids[tid] = rel_file
     except Exception as err:
         exec_logger.error("Fehler bei der Testfall-Erkennung in '%s': %s", suite_dir, err)
         err_id = "MANIFEST_ERROR" if isinstance(err, ValueError) else "MISSING_TEST_FILE"
@@ -174,13 +200,44 @@ def main(argv=None):
     print("-" * 78)
 
     all_logs = []
+    seen_suite_runner_ids = {}
     start_total = time.perf_counter()
 
     for mod_name, file_path in test_files:
         category = file_path.parent.name if file_path.parent != suite_dir else 'general'
+        rel_posix = file_path.relative_to(suite_dir).as_posix()
+
+        expected_ids = None
+        if manifest_specs is not None:
+            if rel_posix not in manifest_specs:
+                exec_logger.error("Manifest missing specification entry for '%s'", rel_posix)
+                err = RuntimeError(f"Manifest missing specification entry for '{rel_posix}'")
+                err_log = TestResult(
+                    test_id=file_path.stem.upper(),
+                    result='ERROR',
+                    error=err,
+                    duration=0.0,
+                    records=[],
+                )
+                err_log.category = category
+                all_logs.append(err_log)
+                log_test_case_result(exec_logger, err_log.test_id, err_log)
+                print(f" ⚠️ ERROR [{category:<11}] {file_path.name:<38} (Manifest-Inkonsistenz)")
+                print(f"        └─ Error: {err}", file=sys.stderr)
+                continue
+            spec_entry = manifest_specs[rel_posix]
+            if isinstance(spec_entry, dict):
+                expected_ids = spec_entry.get('test_ids')
+            elif isinstance(spec_entry, list):
+                expected_ids = spec_entry
+            if not isinstance(expected_ids, list):
+                expected_ids = None
+
         try:
             runners = load_module_runners(file_path)
-            if not runners:
+            if not isinstance(runners, dict):
+                raise ImportError(f"RUNNERS in {file_path.name} must be a dictionary, got {type(runners).__name__}")
+            if not runners and expected_ids is None:
                 raise ImportError(f"No test runners (RUNNERS dictionary) found in {file_path.name}")
         except Exception as err:
             exec_logger.error("Fehler beim Laden von %s: %s", file_path.name, err)
@@ -198,7 +255,66 @@ def main(argv=None):
             print(f"        └─ Error: {err}", file=sys.stderr)
             continue
 
+        extra_ids = set()
+        duplicate_expected = set()
+        if expected_ids is not None:
+            # 1. Check for duplicates within expected_ids for this module
+            seen_expected = set()
+            for tid in expected_ids:
+                if tid in seen_expected:
+                    duplicate_expected.add(tid)
+                seen_expected.add(tid)
+            for dup_id in sorted(duplicate_expected):
+                err = RuntimeError(f"Duplicate test case ID '{dup_id}' declared in manifest for {file_path.name}")
+                err_log = TestResult(test_id=dup_id, result='ERROR', error=err, duration=0.0, records=[])
+                err_log.category = category
+                all_logs.append(err_log)
+                log_test_case_result(exec_logger, dup_id, err_log)
+                print(f" ⚠️ ERROR [{category:<11}] {dup_id:<38} (Doppelte Testfall-ID im Manifest)")
+                print(f"        └─ Error: {err}", file=sys.stderr)
+
+            # 2. Check for missing test IDs (declared in manifest, missing from RUNNERS)
+            missing_ids = [tid for tid in expected_ids if tid not in runners and tid not in duplicate_expected]
+            for mid in missing_ids:
+                err = RuntimeError(f"Expected test case '{mid}' declared in manifest is missing from {file_path.name} RUNNERS")
+                err_log = TestResult(test_id=mid, result='ERROR', error=err, duration=0.0, records=[])
+                err_log.category = category
+                all_logs.append(err_log)
+                log_test_case_result(exec_logger, mid, err_log)
+                print(f" ⚠️ ERROR [{category:<11}] {mid:<38} (Fehlende Testfall-ID in RUNNERS)")
+                print(f"        └─ Error: {err}", file=sys.stderr)
+
+            # 3. Check for unexpected test IDs (in RUNNERS, but not declared in manifest)
+            extra_ids = set(tid for tid in runners if tid not in seen_expected)
+            for eid in sorted(extra_ids):
+                err = RuntimeError(f"Unexpected test case ID '{eid}' in {file_path.name} RUNNERS not declared in manifest")
+                err_log = TestResult(test_id=eid, result='ERROR', error=err, duration=0.0, records=[])
+                err_log.category = category
+                all_logs.append(err_log)
+                log_test_case_result(exec_logger, eid, err_log)
+                print(f" ⚠️ ERROR [{category:<11}] {eid:<38} (Unerwartete Testfall-ID in RUNNERS)")
+                print(f"        └─ Error: {err}", file=sys.stderr)
+
+        # 4. Check for duplicate test IDs across modules in the suite
+        duplicate_runners = set()
+        for tid in runners:
+            if tid in seen_suite_runner_ids:
+                duplicate_runners.add(tid)
+                prev_file = seen_suite_runner_ids[tid]
+                err = RuntimeError(f"Duplicate test case ID '{tid}' in {file_path.name}; already declared in {prev_file}")
+                err_log = TestResult(test_id=tid, result='ERROR', error=err, duration=0.0, records=[])
+                err_log.category = category
+                all_logs.append(err_log)
+                log_test_case_result(exec_logger, tid, err_log)
+                print(f" ⚠️ ERROR [{category:<11}] {tid:<38} (Doppelte Testfall-ID in Suite)")
+                print(f"        └─ Error: {err}", file=sys.stderr)
+            else:
+                seen_suite_runner_ids[tid] = file_path.name
+
+        # Execute valid runners
         for test_id, runner in runners.items():
+            if test_id in extra_ids or test_id in duplicate_runners:
+                continue
             if args.filter and args.filter.lower() not in test_id.lower():
                 continue
 
