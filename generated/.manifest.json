@@ -1,0 +1,99 @@
+{
+  "version": "1.0",
+  "generated_at": "2026-11-04T08:05:56.988560+00:00",
+  "files": [
+    "bms/test_tc_08_bms_hv_precharge_sequence.py",
+    "bms/test_tc_09_bms_cell_overvoltage_derating.py",
+    "bms/test_tc_10_bms_thermal_derating_sweep.py",
+    "bms/test_tc_11_bms_isolation_monitoring.py",
+    "bms/test_tc_12_bms_signal_tolerances_and_ranges.py",
+    "can/test_tc_06_can_signal_transmission.py",
+    "diagnostics/test_tc_01_undervoltage_recovery.py",
+    "diagnostics/test_tc_03_diagnostic_powercycle.py",
+    "diagnostics/test_tc_05_diagnostic_timing_undervoltage.py",
+    "diagnostics/test_tc_13_reference_undervoltage.py",
+    "hil/test_tc_07_controldesk_hil_simulation.py",
+    "hmi/test_tc_02_hmi_loop_verification.py",
+    "limits/test_tc_04_parameter_limits_sweep.py"
+  ],
+  "specs": {
+    "bms/test_tc_08_bms_hv_precharge_sequence.py": {
+      "spec": "inputs/bms/tc_08_bms_hv_precharge_sequence.md",
+      "test_ids": [
+        "TC_08_BMS_HV_PRECHARGE_SEQUENCE"
+      ]
+    },
+    "bms/test_tc_09_bms_cell_overvoltage_derating.py": {
+      "spec": "inputs/bms/tc_09_bms_cell_overvoltage_derating.md",
+      "test_ids": [
+        "TC_09_BMS_CELL_OVERVOLTAGE_DERATING"
+      ]
+    },
+    "bms/test_tc_10_bms_thermal_derating_sweep.py": {
+      "spec": "inputs/bms/tc_10_bms_thermal_derating_sweep.md",
+      "test_ids": [
+        "TC_10_BMS_THERMAL_DERATING_SWEEP"
+      ]
+    },
+    "bms/test_tc_11_bms_isolation_monitoring.py": {
+      "spec": "inputs/bms/tc_11_bms_isolation_monitoring.md",
+      "test_ids": [
+        "TC_11_BMS_ISOLATION_MONITORING"
+      ]
+    },
+    "bms/test_tc_12_bms_signal_tolerances_and_ranges.py": {
+      "spec": "inputs/bms/tc_12_bms_signal_tolerances_and_ranges.md",
+      "test_ids": [
+        "TC_12_BMS_SIGNAL_TOLERANCES_AND_RANGES"
+      ]
+    },
+    "can/test_tc_06_can_signal_transmission.py": {
+      "spec": "inputs/can/tc_06_can_signal_transmission.md",
+      "test_ids": [
+        "TC_06_CAN_SIGNAL_TRANSMISSION"
+      ]
+    },
+    "diagnostics/test_tc_01_undervoltage_recovery.py": {
+      "spec": "inputs/diagnostics/tc_01_undervoltage_recovery.md",
+      "test_ids": [
+        "TC_01_UNDERVOLTAGE_RECOVERY"
+      ]
+    },
+    "diagnostics/test_tc_03_diagnostic_powercycle.py": {
+      "spec": "inputs/diagnostics/tc_03_diagnostic_powercycle.md",
+      "test_ids": [
+        "TC_03_DIAGNOSTIC_POWERCYCLE"
+      ]
+    },
+    "diagnostics/test_tc_05_diagnostic_timing_undervoltage.py": {
+      "spec": "inputs/diagnostics/tc_05_diagnostic_timing_undervoltage.md",
+      "test_ids": [
+        "TC_05_DIAGNOSTIC_TIMING_UNDERVOLTAGE"
+      ]
+    },
+    "diagnostics/test_tc_13_reference_undervoltage.py": {
+      "spec": "inputs/diagnostics/tc_13_reference_undervoltage.md",
+      "test_ids": [
+        "TC_UNDERVOLTAGE_REFERENCE"
+      ]
+    },
+    "hil/test_tc_07_controldesk_hil_simulation.py": {
+      "spec": "inputs/hil/tc_07_controldesk_hil_simulation.md",
+      "test_ids": [
+        "TC_07_CONTROLDESK_HIL_SIMULATION"
+      ]
+    },
+    "hmi/test_tc_02_hmi_loop_verification.py": {
+      "spec": "inputs/hmi/tc_02_hmi_loop_verification.md",
+      "test_ids": [
+        "TC_02_HMI_LOOP_VERIFICATION"
+      ]
+    },
+    "limits/test_tc_04_parameter_limits_sweep.py": {
+      "spec": "inputs/limits/tc_04_parameter_limits_sweep.md",
+      "test_ids": [
+        "TC_04_PARAMETER_LIMITS_SWEEP"
+      ]
+    }
+  }
+}

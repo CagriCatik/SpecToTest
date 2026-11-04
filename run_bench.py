@@ -7,6 +7,7 @@ both console verdicts and a rich, interactive HTML report.
 """
 import argparse
 import importlib.util
+import json
 from pathlib import Path
 import sys
 import time
@@ -27,7 +28,24 @@ from tcg.runtime.runner import execute, get_bench_factory, write_junit_xml
 
 
 def discover_test_modules(suite_dir: Path) -> list[tuple[str, Path]]:
-    """Finds all generated test scripts (test_*.py) in the suite directory."""
+    """Finds all generated test scripts (test_*.py) in the suite directory, using the manifest if present."""
+    manifest_file = suite_dir / '.manifest.json'
+    if not manifest_file.exists():
+        manifest_file = suite_dir / 'manifest.json'
+
+    if manifest_file.exists():
+        try:
+            data = json.loads(manifest_file.read_text(encoding='utf-8'))
+            file_list = data.get('files', [])
+            modules = []
+            for rel in file_list:
+                p = suite_dir / rel
+                if p.is_file() and '__pycache__' not in p.parts:
+                    modules.append((p.stem, p))
+            return sorted(modules, key=lambda item: str(item[1]))
+        except Exception:
+            pass  # Fallback to file search if manifest read fails
+
     candidates = [p for p in sorted(suite_dir.rglob('test_*.py')) if '__pycache__' not in p.parts]
     modules = []
     seen_rel_paths = set()

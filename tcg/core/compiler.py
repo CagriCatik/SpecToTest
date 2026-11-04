@@ -170,7 +170,8 @@ def _compile_loop(data, line, section, phase, source_file, mappings, profile, us
             nested = _compile_loop(body_item, body_line, section, phase, source_file, mappings, profile, used_ids,
                                    parent_scope=scope, parent_raw_vars=raw_vars, parent_conv_vars=body_conv_vars)
             body_steps.append(nested)
-    conv_vars.update({k: v for k, v in body_conv_vars.items() if k in conv_vars})
+    if parent_raw_vars:
+        conv_vars.update({k: v for k, v in body_conv_vars.items() if k in parent_raw_vars})
     loop_items = tuple(body_conv_vars.get(var, raw_vars.get(var, data['items'])))
     return Loop(variable=var, items=loop_items, body=tuple(body_steps),
                 step_label=data.get('Schritt'), source=source, phase=phase)
@@ -226,7 +227,7 @@ def _compile_flow_sequence(flow_items, section, phase, source_file, mappings, pr
             body_nodes = _compile_flow_sequence(data['body'], section, phase, source_file, mappings,
                                                 profile, used_ids, expected_by_step, parent_scope=loop_scope,
                                                 parent_raw_vars=body_raw_vars, parent_conv_vars=body_conv_vars)
-            conv_vars.update({k: v for k, v in body_conv_vars.items() if k in conv_vars})
+            conv_vars.update({k: v for k, v in body_conv_vars.items() if k in raw_vars})
             loop_items = tuple(body_conv_vars.get(var, body_raw_vars.get(var, data['items'])))
             loop_node = Loop(variable=var, items=loop_items,
                              body=tuple(body_nodes), step_label=step_num, source=source, phase=phase)

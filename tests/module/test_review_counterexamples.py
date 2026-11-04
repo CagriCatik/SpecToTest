@@ -21,6 +21,7 @@ from operations.can import wait_can_signal
 import run_bench
 from run_bench import discover_test_modules, load_module_runners
 from tcg.adapters.inbound.text_parser import parse_text_spec
+from tcg.adapters.outbound.python_emitter import render_python
 from tcg.core.compiler import compile_cases
 from tcg.core.model import SpecError
 from tcg.runtime import CheckFailed, TestResult
@@ -88,6 +89,38 @@ class ReviewCounterexamplesModuleTests(BaseTestCase):
         cases_c = compile_cases(sections_c, self.mappings, self.profile, 'tc_mv_compat.txt')
         loop = cases_c[0].steps[0]
         self.assertEqual(loop.items, (Decimal('13.8'), Decimal('12')))
+
+    def test_flaw_1_nested_loop_variable_conversion(self):
+        # Nested loop: outer variable 't' is used for the first time inside inner loop 'i'
+        spec = """
+        TESTFALL: TC_NESTED_LOOP
+        NAME: Test nested loop conversion
+        Action
+        10: FOR (t;["1000ms"])
+        20:   FOR (i;[1])
+        30:     Warte t
+        40:   END FOR
+        50: END FOR
+        """
+        sections = parse_text_spec(spec)
+        cases = compile_cases(sections, self.mappings, self.profile, 'tc_nested_loop.txt')
+        outer_loop = cases[0].steps[0]
+        # "1000ms" must be converted to 1 second (Decimal('1'))
+        self.assertEqual(outer_loop.items, (Decimal('1'),))
+
+        # Check rendered Python source:
+        source = render_python(cases, REGISTRY, RUNNER)
+        self.assertIn("Decimal('1')", source)
+
+        # Execute rendered Python code on bench to verify runtime execution
+        ns = {}
+        exec(source, ns)
+        bench = self.bench()
+        bench_time_before = bench.time
+        res = execute(ns['run_tc_nested_loop'], bench)
+        self.assertEqual(res.result, 'PASS')
+        # bench time should have advanced by 1 second
+        self.assertEqual(bench.time - bench_time_before, Decimal('1'))
 
     def test_flaw_2_batch_runner_reports_error_on_broken_module(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -184,6 +217,50 @@ class ReviewCounterexamplesModuleTests(BaseTestCase):
             # And no half-compiled duplicate output files were written
             self.assertFalse((out_root / 'a' / 'test_tc_01.py').exists())
             self.assertFalse((out_root / 'b' / 'test_tc_02.py').exists())
+
+    def test_flaw_2_deleted_specs_not_executed_by_runner(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            spec_root = Path(tmp_dir) / 'inputs'
+            out_root = Path(tmp_dir) / 'generated'
+            spec_root.mkdir()
+            out_root.mkdir()
+
+            spec_a = spec_root / 'tc_a.txt'
+            spec_a.write_text("TESTFALL: TC_A\nNAME: Case A\nAction\n10. Warte 1 s\n", encoding='utf-8')
+
+            spec_b = spec_root / 'tc_b.txt'
+            spec_b.write_text("TESTFALL: TC_B\nNAME: Case B\nAction\n10. Warte 1 s\n", encoding='utf-8')
+
+            # 1. Generate both TC_A and TC_B
+            cases = generate_batch(spec_root, [MAPPING], RESOURCES, out_root, REGISTRY, RUNNER)
+            self.assertEqual(len(cases), 2)
+            discovered_1 = discover_test_modules(out_root)
+            self.assertEqual(len(discovered_1), 2)
+            self.assertEqual({name for name, _ in discovered_1}, {'test_tc_a', 'test_tc_b'})
+
+            # 2. Add a foreign file (e.g. user utility) that should be preserved
+            foreign_file = out_root / 'user_helper.py'
+            foreign_file.write_text("# foreign user script\n", encoding='utf-8')
+
+            # 3. Delete spec_b
+            spec_b.unlink()
+
+            # 4. Re-generate batch in the same output directory
+            cases_after = generate_batch(spec_root, [MAPPING], RESOURCES, out_root, REGISTRY, RUNNER)
+            self.assertEqual(len(cases_after), 1)
+            self.assertEqual(cases_after[0].id, 'TC_A')
+
+            # 5. Discover modules: only TC_A is discovered! Deleted TC_B is ignored by manifest
+            discovered_2 = discover_test_modules(out_root)
+            self.assertEqual(len(discovered_2), 1)
+            self.assertEqual(discovered_2[0][0], 'test_tc_a')
+
+            # 6. Stale test file was cleaned up from disk
+            self.assertFalse((out_root / 'test_tc_b.py').exists())
+
+            # 7. Foreign file is preserved
+            self.assertTrue(foreign_file.exists())
+            self.assertEqual(foreign_file.read_text(encoding='utf-8'), "# foreign user script\n")
 
     def test_flaw_4_unclosed_block_comment_raises_syntax_spec_error(self):
         spec = """

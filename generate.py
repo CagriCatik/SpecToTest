@@ -7,7 +7,9 @@ Hexagonal Architecture CLI driver:
 """
 import argparse
 import ast
+import datetime
 import importlib
+import json
 from pathlib import Path
 import shutil
 import sys
@@ -99,12 +101,23 @@ def generate_batch(spec_dir: Path, mapping, resources, output_dir: Path, registr
     if logger:
         log_batch_header(logger, spec_dir, len(unique_specs), output_dir)
 
+    manifest_file = output_dir / '.manifest.json'
+    existing_files = set()
+    if manifest_file.exists():
+        try:
+            old_manifest = json.loads(manifest_file.read_text(encoding='utf-8'))
+            existing_files = set(old_manifest.get('files', []))
+        except Exception:
+            pass
+
     with tempfile.TemporaryDirectory() as staging_dir_str:
         staging_dir = Path(staging_dir_str)
         staged_items = []
         compiled_cases = []
         case_sources = {}
         target_sources = {}
+        new_rel_files = []
+        specs_metadata = {}
         total_steps = 0
 
         # Phase 1: Compile and validate all specs in a temporary staging directory.
@@ -112,6 +125,7 @@ def generate_batch(spec_dir: Path, mapping, resources, output_dir: Path, registr
         for (rel_dir, stem), spec_path in sorted(unique_specs.items(), key=lambda x: str(x[1])):
             out_filename = derive_output_filename(spec_path)
             target_out_file = output_dir / rel_dir / out_filename
+            rel_file_str = (rel_dir / out_filename).as_posix() if str(rel_dir) != '.' else out_filename
             if target_out_file in target_sources:
                 raise SpecError(
                     f"Output target collision for '{target_out_file}': targeted by both '{spec_path}' and '{target_sources[target_out_file]}'"
@@ -129,6 +143,11 @@ def generate_batch(spec_dir: Path, mapping, resources, output_dir: Path, registr
                 total_steps += len(list(c.all_steps()))
             compiled_cases.extend(cases)
             staged_items.append((staged_out_file, target_out_file, cases, spec_path, rel_dir))
+            new_rel_files.append(rel_file_str)
+            specs_metadata[rel_file_str] = {
+                'spec': str(spec_path),
+                'test_ids': [c.id for c in cases]
+            }
 
         # Phase 2: All specifications compiled and verified without conflict.
         # Now publish staged files atomically into output_dir.
@@ -143,6 +162,32 @@ def generate_batch(spec_dir: Path, mapping, resources, output_dir: Path, registr
                 for c in cases:
                     log_compiled_case(logger, c, target_file, src_code)
             print(f"Generated {len(cases)} test case(s): {', '.join(c.id for c in cases)} -> {target_file}")
+
+        # Write generation manifest atomically
+        manifest_data = {
+            'version': '1.0',
+            'generated_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            'files': sorted(new_rel_files),
+            'specs': specs_metadata,
+        }
+        manifest_tmp = manifest_file.with_suffix('.json.publish_tmp')
+        manifest_tmp.write_text(json.dumps(manifest_data, indent=2), encoding='utf-8')
+        manifest_tmp.replace(manifest_file)
+
+        # Clean up stale files tracked by the previous manifest that are no longer part of the suite
+        stale_files = existing_files - set(new_rel_files)
+        for stale_rel in stale_files:
+            stale_path = output_dir / stale_rel
+            if stale_path.is_file():
+                try:
+                    stale_path.unlink()
+                    # Clean up empty parent directories
+                    parent = stale_path.parent
+                    while parent != output_dir and parent.is_relative_to(output_dir):
+                        parent.rmdir()
+                        parent = parent.parent
+                except OSError:
+                    pass
 
     duration = time.perf_counter() - start_time
     if logger and log_file_path:
