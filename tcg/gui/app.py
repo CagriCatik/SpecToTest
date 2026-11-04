@@ -122,7 +122,7 @@ class MappingStudioWindow(QMainWindow):
         top_layout.setContentsMargins(14, 8, 14, 8)
 
         self.lbl_file_info = QLabel()
-        self.lbl_file_info.setFont(QFont("sans-serif", 10, QFont.Weight.Bold))
+        self.lbl_file_info.setFont(QFont("", 10, QFont.Weight.Bold))
         top_layout.addWidget(self.lbl_file_info, stretch=2)
 
         self.lbl_stats = QLabel()

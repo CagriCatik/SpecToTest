@@ -93,3 +93,4 @@ def save_mapping_file(path: str | Path, mappings: list[dict[str, Any]], create_b
         return True, f"Erfolgreich {len(mappings)} Mappings in '{p.name}' gespeichert."
     except Exception as e:
         return False, f"Fehler beim Schreiben der Datei: {e}"
+

@@ -36,7 +36,7 @@ class SentenceTesterWidget(QWidget):
         # 1. Header & Quick Presets
         header_box = QHBoxLayout()
         title_lbl = QLabel("<b>🎯 Interaktiver Satzprüfer & Matcher-Playground</b>")
-        title_lbl.setFont(QFont("sans-serif", 11, QFont.Weight.Bold))
+        title_lbl.setFont(QFont("", 11, QFont.Weight.Bold))
         header_box.addWidget(title_lbl)
 
         header_box.addStretch()
@@ -171,3 +171,4 @@ class SentenceTesterWidget(QWidget):
                 f"# Tipp: Prüfe, ob die Syntax des Satzes exakt mit einem Template übereinstimmt "
                 f"oder ob Einheiten / Grenzwerte des Parameters verletzt wurden."
             )
+

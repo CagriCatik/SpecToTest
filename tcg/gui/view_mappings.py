@@ -108,7 +108,7 @@ class MappingsView(QWidget):
         inspector_layout.setSpacing(10)
 
         self.insp_id_lbl = QLabel("Kein Mapping ausgewählt")
-        self.insp_id_lbl.setFont(QFont("sans-serif", 12, QFont.Weight.Bold))
+        self.insp_id_lbl.setFont(QFont("", 12, QFont.Weight.Bold))
         inspector_layout.addWidget(self.insp_id_lbl)
 
         self.insp_status_lbl = QLabel("")
@@ -348,3 +348,4 @@ class MappingsView(QWidget):
         for ph in item.placeholders:
             sample = sample.replace(f"{{{ph}}}", "10")
         self.test_sentence_requested.emit(sample)
+

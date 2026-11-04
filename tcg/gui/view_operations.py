@@ -101,7 +101,7 @@ class OperationsView(QWidget):
         inspector_layout.setSpacing(10)
 
         self.insp_name_lbl = QLabel("Keine Operation ausgewählt")
-        self.insp_name_lbl.setFont(QFont("sans-serif", 12, QFont.Weight.Bold))
+        self.insp_name_lbl.setFont(QFont("", 12, QFont.Weight.Bold))
         inspector_layout.addWidget(self.insp_name_lbl)
 
         self.insp_status_lbl = QLabel("")
@@ -312,3 +312,4 @@ class OperationsView(QWidget):
             self.state.add_mapping(new_item)
             self.on_change()
             self.refresh()
+
