@@ -3,7 +3,11 @@
 Hier werden die in den einzelnen Modulen (ignition.py, diagnostic.py, supply.py, ...)
 implementierten Python-Funktionen mit ihren Verträgen registriert.
 """
+from dataclasses import dataclass
 from decimal import Decimal
+import json
+from pathlib import Path
+import re
 
 from tcg.core.contracts import OperationContract, ParameterSpec, build_registry
 from tcg.core.parameters import Boolean, Decimal as DecimalType, Quantity, Resource, String
@@ -43,7 +47,8 @@ SCREEN = Resource('screen')
 PARAMETER = Resource('parameter')
 PARAMETER_VALUE = DecimalType(Decimal('0'), Decimal('100'))
 CAN_SIGNAL = Resource('can_signal')
-CAN_SIGNAL_VALUE = Quantity(
+
+BASE_CAN_SIGNAL_VALUE = Quantity(
     dimension='can_signal_value',
     unit='',
     factors=(
@@ -68,6 +73,114 @@ CAN_SIGNAL_VALUE = Quantity(
     ),
     minimum=Decimal('-1000000'),
     maximum=Decimal('1000000'),
+)
+
+
+def _load_can_symbolic_enums() -> dict[str, Decimal]:
+    """Lädt symbolische Enum-Zustände aus der CAN-Signaldatenbank (DBC VAL_ Tabellen)."""
+    enums: dict[str, Decimal] = {
+        'Init': Decimal('0'),
+        'Standby': Decimal('1'),
+        'Precharge': Decimal('2'),
+        'DriveReady': Decimal('3'),
+        'Charge': Decimal('4'),
+        'Fault': Decimal('5'),
+        'Offen': Decimal('0'),
+        'Geschlossen': Decimal('1'),
+        'Aus': Decimal('0'),
+        'An': Decimal('1'),
+        'Inaktiv': Decimal('0'),
+        'Aktiv': Decimal('1'),
+        'Normal': Decimal('0'),
+        'Warnung': Decimal('1'),
+        'Fehler': Decimal('2'),
+        'Stufe 1': Decimal('1'),
+        'Stufe_1': Decimal('1'),
+        'Stufe 2': Decimal('2'),
+        'Stufe_2': Decimal('2'),
+    }
+    can_json = Path(__file__).resolve().parent.parent / 'inputs' / 'can_signals.json'
+    if can_json.exists():
+        try:
+            with open(can_json, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            for sdata in data.get('signals', {}).values():
+                for raw_val, desc in sdata.get('values', {}).items():
+                    val = Decimal(str(raw_val))
+                    enums[desc] = val
+                    enums[desc.replace(' ', '_')] = val
+        except Exception:
+            pass
+    return enums
+
+
+@dataclass(frozen=True)
+class SymbolicCanSignalValue:
+    """Quantity-Erweiterung für CAN-Signale: akzeptiert sowohl Zahlen/Einheiten als auch DBC-Enums."""
+    quantity: Quantity
+    symbolic_enums: dict[str, Decimal]
+
+    @property
+    def unit(self):
+        return self.quantity.unit
+
+    @property
+    def factors(self):
+        return self.quantity.factors
+
+    @property
+    def dimension(self):
+        return self.quantity.dimension
+
+    @property
+    def minimum(self):
+        return self.quantity.minimum
+
+    @property
+    def maximum(self):
+        return self.quantity.maximum
+
+    @property
+    def lexical(self):
+        return re.compile(
+            r'(?:-?(?:0|[1-9][0-9]*)(?:[.,][0-9]+)?(?:\s*[A-Za-z°%/Ω]+)?|[A-Za-z_][A-Za-z0-9_]*|"(?:[^"\\]|\\.)*")'
+        )
+
+    def convert(self, text, profile):
+        clean = text.strip('"\'')
+        if clean in self.symbolic_enums:
+            return self.symbolic_enums[clean]
+        clean_lower = clean.lower()
+        for k, v in self.symbolic_enums.items():
+            if k.lower() == clean_lower:
+                return v
+        return self.quantity.convert(text, profile)
+
+
+CAN_SIGNAL_VALUE = SymbolicCanSignalValue(BASE_CAN_SIGNAL_VALUE, _load_can_symbolic_enums())
+
+VEHICLE_SPEED_VALUE = Quantity(
+    dimension='vehicle_speed',
+    unit='km/h',
+    factors=(('km/h', Decimal('1')),),
+    minimum=Decimal('0'),
+    maximum=Decimal('350'),
+)
+
+ENGINE_SPEED_VALUE = Quantity(
+    dimension='engine_speed',
+    unit='rpm',
+    factors=(('rpm', Decimal('1')),),
+    minimum=Decimal('0'),
+    maximum=Decimal('10000'),
+)
+
+SOC_VALUE = Quantity(
+    dimension='soc',
+    unit='%',
+    factors=(('%', Decimal('1')),),
+    minimum=Decimal('0'),
+    maximum=Decimal('100'),
 )
 
 # Phasen

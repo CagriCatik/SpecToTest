@@ -68,7 +68,11 @@
       "min": 0,
       "max": 1,
       "default": 0,
-      "comment": "Zündungsstatus Klemme 15 (0=aus, 1=an)"
+      "comment": "Zündungsstatus Klemme 15 (0=aus, 1=an)",
+      "values": {
+        "0": "Aus",
+        "1": "An"
+      }
     },
     "BatteryVoltageCAN": {
       "message": "Power_01",
@@ -128,7 +132,11 @@
       "min": 0,
       "max": 1,
       "default": 0,
-      "comment": "Türkontaktstatus (0=geschlossen, 1=offen)"
+      "comment": "Türkontaktstatus (0=geschlossen, 1=offen)",
+      "values": {
+        "0": "Geschlossen",
+        "1": "Offen"
+      }
     },
     "BMSState": {
       "message": "BMS_01_State",
@@ -140,7 +148,15 @@
       "min": 0,
       "max": 10,
       "default": 1,
-      "comment": "BMS Zustand (0=Init, 1=Standby, 2=Precharge, 3=DriveReady, 4=Charge, 5=Fault)"
+      "comment": "BMS Zustand (0=Init, 1=Standby, 2=Precharge, 3=DriveReady, 4=Charge, 5=Fault)",
+      "values": {
+        "0": "Init",
+        "1": "Standby",
+        "2": "Precharge",
+        "3": "DriveReady",
+        "4": "Charge",
+        "5": "Fault"
+      }
     },
     "HVMainPosContactState": {
       "message": "BMS_01_State",
@@ -152,7 +168,12 @@
       "min": 0,
       "max": 2,
       "default": 0,
-      "comment": "Hauptschütz HV+ Status (0=Offen, 1=Geschlossen, 2=Fehler)"
+      "comment": "Hauptschütz HV+ Status (0=Offen, 1=Geschlossen, 2=Fehler)",
+      "values": {
+        "0": "Offen",
+        "1": "Geschlossen",
+        "2": "Fehler"
+      }
     },
     "HVMainNegContactState": {
       "message": "BMS_01_State",
@@ -164,7 +185,12 @@
       "min": 0,
       "max": 2,
       "default": 0,
-      "comment": "Hauptschütz HV- Status (0=Offen, 1=Geschlossen, 2=Fehler)"
+      "comment": "Hauptschütz HV- Status (0=Offen, 1=Geschlossen, 2=Fehler)",
+      "values": {
+        "0": "Offen",
+        "1": "Geschlossen",
+        "2": "Fehler"
+      }
     },
     "PrechargeContactState": {
       "message": "BMS_01_State",
@@ -176,7 +202,12 @@
       "min": 0,
       "max": 2,
       "default": 0,
-      "comment": "Vorladeschütz Status (0=Offen, 1=Geschlossen, 2=Fehler)"
+      "comment": "Vorladeschütz Status (0=Offen, 1=Geschlossen, 2=Fehler)",
+      "values": {
+        "0": "Offen",
+        "1": "Geschlossen",
+        "2": "Fehler"
+      }
     },
     "InterlockStatus": {
       "message": "BMS_01_State",
@@ -188,7 +219,11 @@
       "min": 0,
       "max": 1,
       "default": 1,
-      "comment": "HV-Interlock Schleife (0=Offen/Unterbrochen, 1=Geschlossen)"
+      "comment": "HV-Interlock Schleife (0=Offen/Unterbrochen, 1=Geschlossen)",
+      "values": {
+        "0": "Offen",
+        "1": "Geschlossen"
+      }
     },
     "CrashSignal": {
       "message": "BMS_01_State",
@@ -200,7 +235,11 @@
       "min": 0,
       "max": 1,
       "default": 0,
-      "comment": "Crash-Signal (0=Kein Crash, 1=Crash erkannt)"
+      "comment": "Crash-Signal (0=Kein Crash, 1=Crash erkannt)",
+      "values": {
+        "0": "Kein Crash",
+        "1": "Crash erkannt"
+      }
     },
     "PackVoltage": {
       "message": "BMS_02_Pack",
@@ -344,7 +383,11 @@
       "min": 0,
       "max": 1,
       "default": 0,
-      "comment": "Zell-Balancing Status (0=Inaktiv, 1=Aktiv)"
+      "comment": "Zell-Balancing Status (0=Inaktiv, 1=Aktiv)",
+      "values": {
+        "0": "Inaktiv",
+        "1": "Aktiv"
+      }
     },
     "CoolingRequest": {
       "message": "BMS_04_Cells",
@@ -356,7 +399,12 @@
       "min": 0,
       "max": 2,
       "default": 0,
-      "comment": "Kühlanforderung an Thermomanagement (0=Aus, 1=Stufe 1, 2=Stufe 2)"
+      "comment": "Kühlanforderung an Thermomanagement (0=Aus, 1=Stufe 1, 2=Stufe 2)",
+      "values": {
+        "0": "Aus",
+        "1": "Stufe 1",
+        "2": "Stufe 2"
+      }
     },
     "IsolationResistance": {
       "message": "BMS_05_Safety",
@@ -380,7 +428,12 @@
       "min": 0,
       "max": 2,
       "default": 0,
-      "comment": "Isolationsüberwachungs-Status (0=Normal, 1=Warnung, 2=Fehler)"
+      "comment": "Isolationsüberwachungs-Status (0=Normal, 1=Warnung, 2=Fehler)",
+      "values": {
+        "0": "Normal",
+        "1": "Warnung",
+        "2": "Fehler"
+      }
     }
   }
 }

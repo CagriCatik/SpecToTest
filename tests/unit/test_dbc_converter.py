@@ -13,6 +13,13 @@ from tools.dbc_to_json import (
     dict_to_dbc,
     validate_can_database,
 )
+from operations.registry import REGISTRY
+from tcg.adapters.inbound.text_parser import parse_text_spec
+from tcg.adapters.outbound.dummy_bench import VectorDummyBench, load_config
+from tcg.adapters.outbound.python_emitter import render_python
+from tcg.core.compiler import compile_cases
+from tcg.core.mapping import load_mappings, parse_mapping_document
+from tcg.core.profile import load_profile
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -60,6 +67,16 @@ class TestDbcConverter(unittest.TestCase):
         self.assertEqual(cv_max["unit"], "V")
         self.assertEqual(cv_max["factor"], 0.001)
         self.assertEqual(cv_max["default"], 3.7)
+
+        # Check VAL_ enums
+        self.assertIn("BMSState", data["signals"])
+        bms_state = data["signals"]["BMSState"]
+        self.assertIn("values", bms_state)
+        self.assertEqual(bms_state["values"]["3"], "DriveReady")
+        self.assertEqual(bms_state["values"]["1"], "Standby")
+
+        self.assertIn("InterlockStatus", data["signals"])
+        self.assertEqual(data["signals"]["InterlockStatus"]["values"]["1"], "Geschlossen")
 
     def test_can_database_validation_clean(self):
         content = self.dbc_path.read_text(encoding="utf-8")
@@ -153,6 +170,43 @@ class TestDbcConverter(unittest.TestCase):
             self.assertEqual(data["database"], "Powertrain_BMS_CAN")
             self.assertEqual(len(data["signals"]), 27)
 
+    def test_symbolic_can_step_compilation_and_execution(self):
+        """Verify that symbolic DBC enum names are compiled into correct Decimal values and executed."""
+        mapping_entries = parse_mapping_document((ROOT / "inputs/operation_mapping.toml").read_text(encoding="utf-8"))
+        mappings = load_mappings(mapping_entries, REGISTRY)
+        profile = load_profile(ROOT / "inputs/resources.json")
+
+        spec_text = """# TESTFALL: TC_SYMBOLIC_CAN
+NAME: Symbolic CAN State Enum Test
+## Precondition
+10. CAN-Signal InterlockStatus auf Geschlossen setzen
+## Action
+20. CAN-Signal BMSState auf DriveReady setzen
+30. CAN-Signal CoolingRequest auf "Stufe 2" setzen
+## Expected Result
+20. CAN-Signal BMSState ist DriveReady
+30. CAN-Signal CoolingRequest ist "Stufe 2"
+## Postcondition
+40. CAN-Signal BMSState auf Standby setzen
+"""
+        sections = parse_text_spec(spec_text)
+        cases = compile_cases(sections, mappings, profile, "test_symbolic.md")
+        source = render_python(cases, REGISTRY, "VectorDummyBench")
+
+        self.assertIn("signal='InterlockStatus', value=Decimal('1')", source)
+        self.assertIn("signal='BMSState', value=Decimal('3')", source)
+        self.assertIn("signal='CoolingRequest', value=Decimal('2')", source)
+
+        # Execute on simulated Vector testbench
+        bench = VectorDummyBench(load_config(ROOT / "inputs/demo_bench.json", profile))
+        ns = {}
+        exec(compile(source, "generated_symbolic_test.py", "exec"), ns)
+        runner = ns["RUNNERS"]["TC_SYMBOLIC_CAN"]
+        result = runner(bench)
+        self.assertEqual(result.result, "PASS")
+        self.assertEqual(bench.can_signals["BMSState"], 1)  # Cleanup left it in Standby (1)
+
 
 if __name__ == "__main__":
     unittest.main()
+

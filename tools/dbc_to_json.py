@@ -93,6 +93,17 @@ def dbc_to_dict(dbc_content: str) -> dict[str, Any]:
         raw_val = _parse_numeric(m.group(3))
         start_values[(int(m.group(1)) & 0x1FFFFFFF, m.group(2))] = raw_val
 
+    # Value descriptions (VAL_ <id> <signal> <num> "<desc>" ... ;)
+    val_entries: dict[tuple[int, str], dict[str, str]] = {}
+    val_pattern = re.compile(r'VAL_\s+(\d+)\s+([a-zA-Z0-9_]+)\s+(.*?)\s*;', re.DOTALL)
+    for m in val_pattern.finditer(dbc_content):
+        can_id = int(m.group(1)) & 0x1FFFFFFF
+        sname = m.group(2)
+        pairs_str = m.group(3)
+        pairs = re.findall(r'(-?\d+)\s+"([^"]*)"', pairs_str)
+        if pairs:
+            val_entries[(can_id, sname)] = {val: desc for val, desc in pairs}
+
     # 3. Parse messages (BO_) and signals (SG_)
     bo_pattern = re.compile(r"^BO_\s+(\d+)\s+([a-zA-Z0-9_]+)\s*:\s*(\d+)\s+([a-zA-Z0-9_]+)")
     sg_pattern = re.compile(
@@ -137,7 +148,7 @@ def dbc_to_dict(dbc_content: str) -> dict[str, Any]:
             default_val = start_values.get((current_can_id, sig_name), 0)
             comment_val = cm_sg.get((current_can_id, sig_name), "")
 
-            signals[sig_name] = {
+            sig_dict: dict[str, Any] = {
                 "message": current_msg_name,
                 "start_bit": start_bit,
                 "length": length,
@@ -149,6 +160,10 @@ def dbc_to_dict(dbc_content: str) -> dict[str, Any]:
                 "default": default_val,
                 "comment": comment_val,
             }
+            if (current_can_id, sig_name) in val_entries:
+                sig_dict["values"] = val_entries[(current_can_id, sig_name)]
+
+            signals[sig_name] = sig_dict
 
     return {
         "database": db_name,
@@ -304,6 +319,16 @@ def dict_to_dbc(data: dict[str, Any]) -> str:
 
     for cid, sname, sval in start_value_list:
         lines.append(f'BA_ "GenSigStartValue" SG_ {cid} {sname} {sval};')
+    lines.append("")
+
+    # Value descriptions (VAL_)
+    for sname, sdata in signals.items():
+        vals = sdata.get("values")
+        mname = sdata.get("message")
+        if vals and mname in msg_id_map:
+            cid = msg_id_map[mname]
+            pairs_str = " ".join(f'{k} "{v}"' for k, v in vals.items())
+            lines.append(f"VAL_ {cid} {sname} {pairs_str} ;")
     lines.append("")
 
     return "\n".join(lines) + "\n"
@@ -490,3 +515,4 @@ Examples:
 
 if __name__ == "__main__":
     sys.exit(main())
+
