@@ -557,7 +557,7 @@ class ReviewCounterexamplesModuleTests(BaseTestCase):
             suite_dir.mkdir()
             manifest_path = suite_dir / '.manifest.json'
             manifest_data = {
-                "version": "1.0",
+                "version": "legacy",
                 "files": ["test_one.py", "test_two.py"],
             }
             manifest_path.write_text(json.dumps(manifest_data), encoding='utf-8')
@@ -588,6 +588,118 @@ class ReviewCounterexamplesModuleTests(BaseTestCase):
             self.assertIn('errors="1"', xml_content)
             self.assertIn('TC_DUP', xml_content)
             self.assertIn('Duplicate test case ID', xml_content)
+
+    def test_manifest_missing_test_ids_reports_manifest_error_and_exits_2(self):
+        """Review counterexample: Manifest specifies a file in specs, but omits test_ids."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            suite_dir = Path(tmp_dir) / 'generated'
+            suite_dir.mkdir()
+            manifest_path = suite_dir / '.manifest.json'
+            manifest_data = {
+                "version": "1.0",
+                "files": ["test_multi.py"],
+                "specs": {
+                    "test_multi.py": {
+                        "spec": "inputs/multi.md"
+                        # test_ids is missing!
+                    }
+                }
+            }
+            manifest_path.write_text(json.dumps(manifest_data), encoding='utf-8')
+
+            test_file = suite_dir / 'test_multi.py'
+            test_file.write_text(
+                "def runner_a(bench): pass\n"
+                "runner_a.test_id = 'TC_A'\n"
+                "RUNNERS = {'TC_A': runner_a}\n",
+                encoding='utf-8'
+            )
+
+            xml_path = Path(tmp_dir) / 'junit.xml'
+            html_path = Path(tmp_dir) / 'report.html'
+            exit_code = run_bench.main([
+                '--suite', str(suite_dir),
+                '--junit-xml', str(xml_path),
+                '--html-report', str(html_path),
+                '--log-dir', str(Path(tmp_dir) / 'logs'),
+            ])
+            self.assertEqual(exit_code, 2)
+            self.assertTrue(xml_path.exists())
+            self.assertTrue(html_path.exists())
+
+            xml_content = xml_path.read_text(encoding='utf-8')
+            self.assertIn('errors="1"', xml_content)
+            self.assertIn('MANIFEST_ERROR', xml_content)
+            self.assertIn("missing valid 'test_ids' list", xml_content)
+
+            html_content = html_path.read_text(encoding='utf-8')
+            self.assertIn('ERROR', html_content)
+
+    def test_manifest_missing_specs_section_reports_manifest_error_and_exits_2(self):
+        """Current format version 1.0 requires 'specs' dictionary."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            suite_dir = Path(tmp_dir) / 'generated'
+            suite_dir.mkdir()
+            manifest_path = suite_dir / '.manifest.json'
+            manifest_data = {
+                "version": "1.0",
+                "files": ["test_single.py"],
+            }
+            manifest_path.write_text(json.dumps(manifest_data), encoding='utf-8')
+
+            test_file = suite_dir / 'test_single.py'
+            test_file.write_text(
+                "def runner_a(bench): pass\n"
+                "runner_a.test_id = 'TC_A'\n"
+                "RUNNERS = {'TC_A': runner_a}\n",
+                encoding='utf-8'
+            )
+
+            xml_path = Path(tmp_dir) / 'junit.xml'
+            html_path = Path(tmp_dir) / 'report.html'
+            exit_code = run_bench.main([
+                '--suite', str(suite_dir),
+                '--junit-xml', str(xml_path),
+                '--html-report', str(html_path),
+                '--log-dir', str(Path(tmp_dir) / 'logs'),
+            ])
+            self.assertEqual(exit_code, 2)
+            xml_content = xml_path.read_text(encoding='utf-8')
+            self.assertIn('MANIFEST_ERROR', xml_content)
+            self.assertIn("missing required 'specs' dictionary", xml_content)
+
+    def test_manifest_legacy_version_allows_omitting_specs(self):
+        """Explicit legacy version in manifest allows running without specs."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            suite_dir = Path(tmp_dir) / 'generated'
+            suite_dir.mkdir()
+            manifest_path = suite_dir / '.manifest.json'
+            manifest_data = {
+                "version": "legacy",
+                "files": ["test_single.py"],
+            }
+            manifest_path.write_text(json.dumps(manifest_data), encoding='utf-8')
+
+            test_file = suite_dir / 'test_single.py'
+            test_file.write_text(
+                "def runner_a(bench): pass\n"
+                "runner_a.test_id = 'TC_A'\n"
+                "RUNNERS = {'TC_A': runner_a}\n",
+                encoding='utf-8'
+            )
+
+            xml_path = Path(tmp_dir) / 'junit.xml'
+            html_path = Path(tmp_dir) / 'report.html'
+            exit_code = run_bench.main([
+                '--suite', str(suite_dir),
+                '--junit-xml', str(xml_path),
+                '--html-report', str(html_path),
+                '--log-dir', str(Path(tmp_dir) / 'logs'),
+            ])
+            self.assertEqual(exit_code, 0)
+            xml_content = xml_path.read_text(encoding='utf-8')
+            self.assertIn('tests="1"', xml_content)
+            self.assertIn('errors="0"', xml_content)
 
 
 if __name__ == '__main__':

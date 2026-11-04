@@ -42,6 +42,84 @@ def load_manifest(suite_dir: Path) -> dict | None:
         raise ValueError(f"Invalid JSON in manifest '{manifest_file}': {err}") from err
 
 
+def validate_manifest(manifest_data: dict, suite_dir: Path) -> dict | None:
+    """Validates the manifest structure and returns normalized specs mapping.
+
+    For the current manifest format (version 1.0 or unversioned), 'specs' and a valid,
+    non-empty 'test_ids' list per file are strictly required.
+    Legacy formats (explicit version '0.1' or 'legacy') allow omitting 'specs'.
+    """
+    manifest_file = suite_dir / '.manifest.json' if (suite_dir / '.manifest.json').exists() else suite_dir / 'manifest.json'
+    version = str(manifest_data.get('version', '1.0'))
+    is_legacy = version in ('0.1', 'legacy')
+
+    file_list = manifest_data.get('files')
+    if not isinstance(file_list, list):
+        raise ValueError(f"Manifest '{manifest_file}' missing required 'files' list")
+
+    if is_legacy:
+        # Legacy format: specs is optional
+        raw_specs = manifest_data.get('specs')
+        if raw_specs is None:
+            return None
+        if not isinstance(raw_specs, dict):
+            raise ValueError(f"Manifest '{manifest_file}' invalid 'specs' section: expected dictionary")
+    else:
+        # Current format: specs is strictly required
+        raw_specs = manifest_data.get('specs')
+        if raw_specs is None or not isinstance(raw_specs, dict):
+            raise ValueError(f"Manifest '{manifest_file}' missing required 'specs' dictionary in format version {version}")
+
+    raw_specs_normalized = {Path(k).as_posix(): v for k, v in raw_specs.items()}
+    for rel_file in file_list:
+        rel_posix = Path(rel_file).as_posix()
+        if not is_legacy and rel_posix not in raw_specs_normalized:
+            raise ValueError(f"Manifest '{manifest_file}' missing specification metadata in 'specs' for '{rel_file}'")
+
+    normalized_specs = {}
+    manifest_seen_ids = {}
+
+    for k, spec_info in raw_specs.items():
+        rel_posix = Path(k).as_posix()
+        if isinstance(spec_info, list):
+            test_ids = spec_info
+        elif isinstance(spec_info, dict):
+            test_ids = spec_info.get('test_ids')
+        else:
+            raise ValueError(f"Manifest '{manifest_file}' invalid spec entry for '{rel_posix}': expected dict or list")
+
+        if not is_legacy:
+            if not isinstance(test_ids, list) or len(test_ids) == 0:
+                raise ValueError(
+                    f"Manifest '{manifest_file}' missing valid 'test_ids' list for '{rel_posix}'"
+                )
+            for tid in test_ids:
+                if not isinstance(tid, str) or not tid.strip():
+                    raise ValueError(
+                        f"Manifest '{manifest_file}' contains invalid test_id in 'specs' for '{rel_posix}': {tid!r}"
+                    )
+                if tid in manifest_seen_ids:
+                    raise ValueError(
+                        f"Duplicate test case ID '{tid}' declared in manifest across '{manifest_seen_ids[tid]}' and '{rel_posix}'"
+                    )
+                manifest_seen_ids[tid] = rel_posix
+        else:
+            if isinstance(test_ids, list):
+                for tid in test_ids:
+                    if tid in manifest_seen_ids:
+                        raise ValueError(
+                            f"Duplicate test case ID '{tid}' declared in manifest across '{manifest_seen_ids[tid]}' and '{rel_posix}'"
+                        )
+                    manifest_seen_ids[tid] = rel_posix
+
+        normalized_specs[rel_posix] = {
+            'spec': spec_info.get('spec') if isinstance(spec_info, dict) else None,
+            'test_ids': list(test_ids) if isinstance(test_ids, list) else None,
+        }
+
+    return normalized_specs
+
+
 def discover_test_modules(suite_dir: Path) -> list[tuple[str, Path]]:
     """Finds all generated test scripts (test_*.py) in the suite directory, strictly using the manifest if present."""
     data = load_manifest(suite_dir)
@@ -117,23 +195,7 @@ def main(argv=None):
     try:
         manifest_data = load_manifest(suite_dir)
         test_files = discover_test_modules(suite_dir)
-        manifest_specs = None
-        if manifest_data is not None and 'specs' in manifest_data:
-            raw_specs = manifest_data.get('specs')
-            if not isinstance(raw_specs, dict):
-                manifest_file = suite_dir / '.manifest.json' if (suite_dir / '.manifest.json').exists() else suite_dir / 'manifest.json'
-                raise ValueError(f"Manifest '{manifest_file}' missing valid 'specs' dictionary")
-            manifest_specs = {Path(k).as_posix(): v for k, v in raw_specs.items()}
-            # Check for duplicate Test_IDs across specs within the manifest
-            manifest_seen_ids = {}
-            for rel_file, spec_info in manifest_specs.items():
-                tids = spec_info.get('test_ids', []) if isinstance(spec_info, dict) else (spec_info if isinstance(spec_info, list) else [])
-                for tid in tids:
-                    if tid in manifest_seen_ids:
-                        raise ValueError(
-                            f"Duplicate test case ID '{tid}' declared in manifest across '{manifest_seen_ids[tid]}' and '{rel_file}'"
-                        )
-                    manifest_seen_ids[tid] = rel_file
+        manifest_specs = validate_manifest(manifest_data, suite_dir) if manifest_data is not None else None
     except Exception as err:
         exec_logger.error("Fehler bei der Testfall-Erkennung in '%s': %s", suite_dir, err)
         err_id = "MANIFEST_ERROR" if isinstance(err, ValueError) else "MISSING_TEST_FILE"
@@ -209,9 +271,10 @@ def main(argv=None):
 
         expected_ids = None
         if manifest_specs is not None:
-            if rel_posix not in manifest_specs:
-                exec_logger.error("Manifest missing specification entry for '%s'", rel_posix)
-                err = RuntimeError(f"Manifest missing specification entry for '{rel_posix}'")
+            spec_entry = manifest_specs.get(rel_posix)
+            if spec_entry is None or not isinstance(spec_entry.get('test_ids'), list):
+                exec_logger.error("Manifest missing valid test_ids for '%s'", rel_posix)
+                err = RuntimeError(f"Manifest missing valid 'test_ids' list for '{rel_posix}'")
                 err_log = TestResult(
                     test_id=file_path.stem.upper(),
                     result='ERROR',
@@ -222,16 +285,10 @@ def main(argv=None):
                 err_log.category = category
                 all_logs.append(err_log)
                 log_test_case_result(exec_logger, err_log.test_id, err_log)
-                print(f" ⚠️ ERROR [{category:<11}] {file_path.name:<38} (Manifest-Inkonsistenz)")
+                print(f" ⚠️ ERROR [{category:<11}] {file_path.name:<38} (Manifestfehler)")
                 print(f"        └─ Error: {err}", file=sys.stderr)
                 continue
-            spec_entry = manifest_specs[rel_posix]
-            if isinstance(spec_entry, dict):
-                expected_ids = spec_entry.get('test_ids')
-            elif isinstance(spec_entry, list):
-                expected_ids = spec_entry
-            if not isinstance(expected_ids, list):
-                expected_ids = None
+            expected_ids = spec_entry['test_ids']
 
         try:
             runners = load_module_runners(file_path)
