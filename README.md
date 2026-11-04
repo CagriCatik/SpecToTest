@@ -4,6 +4,11 @@ Ein nach den Prinzipien der **Hexagonalen Architektur (Ports & Adapters)** entwi
 
 ---
 
+> [!TIP]
+> **Ausführliche Dokumentationsreihe:** Eine sequentiell gegliederte Gesamtdokumentation mit Architektur-, Sequenz- und Flussdiagrammen (Mermaid) findest du im Ordner [**`docs/`**](file:///Users/cc/Desktop/SpecToTest/docs/README.md) (beginnend mit [**`00_inhaltsverzeichnis.md`**](file:///Users/cc/Desktop/SpecToTest/docs/00_inhaltsverzeichnis.md) bis [**`08_schritt_fuer_schritt_anleitung.md`**](file:///Users/cc/Desktop/SpecToTest/docs/08_schritt_fuer_schritt_anleitung.md)).
+
+---
+
 ## Inhaltsverzeichnis
 
 1. [Motivation & Kernprinzipien](#-motivation--kernprinzipien)
