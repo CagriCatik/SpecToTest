@@ -466,7 +466,8 @@ class GuiWindowWorkspacesIntegrationTests(unittest.TestCase):
         # Check status updated
         self.assertIn("Aktuell geprüft", specs.lbl_analysis_status.text())
 
-        # Test stale result protection: If an older result arrives for a superseded revision
+        # Test stale result protection: If an older result arrives for a superseded revision,
+        # it is discarded and does NOT revert the valid "Aktuell geprüft" status
         older_res = CompilationFacade.compile_text(
             text="# Stale\n## Action\n10. Warte 2 s",
             source_name="stale.md",
@@ -476,6 +477,10 @@ class GuiWindowWorkspacesIntegrationTests(unittest.TestCase):
         )
         # Emit with obsolete revision (rev1 - 1)
         specs.on_doc_analysis_finished(older_res, revision=rev1 - 1)
+        self.assertIn("Aktuell geprüft", specs.lbl_analysis_status.text())
+
+        # Modifying the editor text immediately marks the status as "Ergebnis veraltet"
+        specs.editor.insertPlainText("\n# Text change")
         self.assertIn("Ergebnis veraltet", specs.lbl_analysis_status.text())
 
     def test_multi_tier_problem_list_filtering(self):

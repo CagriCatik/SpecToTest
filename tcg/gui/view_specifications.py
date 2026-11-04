@@ -693,6 +693,7 @@ class SpecificationWorkspace(QWidget):
         if self.current_spec_path:
             self.lbl_current_file.setText(f"{self.current_spec_path.name} (ungespeichert)")
             self.analysis_manager.next_doc_revision(str(self.current_spec_path.resolve()))
+        self.lbl_analysis_status.setText("<span style='color: #94a3b8;'>Ergebnis veraltet</span>")
         self.compile_timer.start()
 
     def trigger_background_doc_analysis(self):
@@ -768,9 +769,9 @@ class SpecificationWorkspace(QWidget):
         is_different_doc = bool(curr_identity and doc_identity and doc_identity != curr_identity)
 
         if is_stale_revision or is_different_doc:
-            if not is_different_doc:
-                self.lbl_analysis_status.setText("<span style='color: #94a3b8;'>Ergebnis veraltet</span>")
+            # Stale or mismatched result: discard without mutating the current document's status
             return
+
         self.apply_doc_result(result, revision)
 
     def on_doc_analysis_failed(self, error_msg: str, doc_identity: str = "", revision: int = 0):
