@@ -18,8 +18,9 @@ def literal(value):
         return str(value)
     if type(value) is Decimal and value.is_finite():
         return f"Decimal('{_decimal_text(value)}')"
-    if type(value) is str:
-        return repr(value)
+    if isinstance(value, str):
+        # str subclasses (e.g. a resource's adapter address) render as plain strings.
+        return repr(str(value))
     if isinstance(value, VariableRef):
         return value.name
     raise ValueError(f'unsupported literal {value!r}')
@@ -283,9 +284,22 @@ def render_python(cases, registry, runner_module='tcg.runtime.runner'):
 
     lines += ['RUNNERS = {']
     lines += [f'    {literal(case.id)}: {function_name(case)},' for case in cases]
+    lines += ['}', '']
+
+    # Test bench capabilities each case needs. A loaded communication description
+    # says nothing about what the bench can do, so the requirement travels with the
+    # generated test and is checked at the adapter boundary before the test runs.
+    capabilities = {case.id: sorted({
+        name for step in case.all_steps()
+        for name in (getattr(step.contract, 'capabilities', ()) or ())
+    }) for case in cases}
+    if any(capabilities.values()):
+        lines += ['REQUIRED_CAPABILITIES = {']
+        lines += [f'    {literal(case.id)}: {tuple(capabilities[case.id])!r},'
+                  for case in cases if capabilities[case.id]]
+        lines += ['}', '']
+
     lines += [
-        '}',
-        '',
         "if __name__ == '__main__':",
         f'    from {runner_module} import run_main',
         '    raise SystemExit(run_main(RUNNERS))',

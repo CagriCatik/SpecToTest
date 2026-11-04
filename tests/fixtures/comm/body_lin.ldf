@@ -1,0 +1,53 @@
+/* Small LIN 2.1 description used as a test fixture. */
+LIN_description_file;
+LIN_protocol_version = "2.1";
+LIN_language_version = "2.1";
+LIN_speed = 19.2 kbps;
+
+Nodes {
+  Master: BodyMaster, 5 ms, 0.1 ms;
+  Slaves: DoorModule, MirrorModule;
+}
+
+Signals {
+  DoorState: 2, 0, DoorModule, BodyMaster;
+  MirrorPosition: 8, 0, MirrorModule, BodyMaster;
+  VehicleSpeed: 8, 0, BodyMaster, DoorModule;
+}
+
+Frames {
+  DoorFrame: 0x20, DoorModule, 2 {
+    DoorState, 0;
+  }
+  MirrorFrame: 0x21, MirrorModule, 1 {
+    MirrorPosition, 0;
+  }
+  SpeedFrame: 0x22, BodyMaster, 1 {
+    VehicleSpeed, 0;
+  }
+}
+
+Schedule_tables {
+  NormalTable {
+    DoorFrame delay 10 ms;
+    MirrorFrame delay 10 ms;
+  }
+  DiagnosticTable {
+    SpeedFrame delay 20 ms;
+  }
+}
+
+Signal_encoding_types {
+  DoorEncoding {
+    logical_value, 0, "Geschlossen";
+    logical_value, 1, "Offen";
+  }
+  MirrorEncoding {
+    physical_value, 0, 200, 0.5, -10, "deg";
+  }
+}
+
+Signal_representation {
+  DoorEncoding: DoorState;
+  MirrorEncoding: MirrorPosition;
+}

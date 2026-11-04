@@ -3,19 +3,18 @@
 Hier werden die in den einzelnen Modulen (ignition.py, diagnostic.py, supply.py, ...)
 implementierten Python-Funktionen mit ihren Verträgen registriert.
 """
-from contextvars import ContextVar
-from dataclasses import dataclass
 from decimal import Decimal
-import json
-from pathlib import Path
-import re
-from typing import Any
 
-from tcg.core.contracts import OperationContract, ParameterSpec, build_registry
-from tcg.core.model import SpecError
+from tcg.core.contracts import OperationContract, ParameterSpec, bind_registry, build_registry
 from tcg.core.parameters import Boolean, Decimal as DecimalType, Quantity, Resource, String
 
-from . import can, diagnostic, hmi, ignition, supply, timing
+from tcg.comm.model import Capability, ObjectKind, Technology
+
+from . import can, diagnostic, ethernet, hmi, ignition, lin, supply, timing
+from tcg.comm.catalog import COMM_CATALOG_KEY
+from tcg.comm.model import EMPTY_CATALOG
+
+from .comm_types import RAW, ResourceReference, SignalValue
 
 # 1. Parameter-Typdefinitionen (Einheiten, Wertebereiche, Ressourcen)
 SUPPLY_VOLTAGE = Quantity(
@@ -49,7 +48,6 @@ DTC = Resource('diagnostic_code')
 SCREEN = Resource('screen')
 PARAMETER = Resource('parameter')
 PARAMETER_VALUE = DecimalType(Decimal('0'), Decimal('100'))
-CAN_SIGNAL = Resource('can_signal')
 
 BASE_CAN_SIGNAL_VALUE = Quantity(
     dimension='can_signal_value',
@@ -79,141 +77,54 @@ BASE_CAN_SIGNAL_VALUE = Quantity(
 )
 
 
-def load_can_signal_database(source: str | Path | dict | None = None) -> tuple[dict[str, dict[str, Decimal]], set[str]]:
-    """Lädt signalabhängige Enum-Zustände strikt und ausschließlich aus der übergebenen CAN-Signaldatenbank.
+CAN_TOLERANCE = Quantity(
+    dimension='can_signal_tolerance',
+    unit='',
+    factors=BASE_CAN_SIGNAL_VALUE.factors,
+    minimum=Decimal('0'),
+    maximum=Decimal('1000000'),
+)
 
-    source kann ein Dateipfad (str oder Path) oder ein bereits geparstes dict sein.
-    Wird source=None übergeben, wird standardmäßig inputs/can_signals.json geladen.
+# --- Communication resource references (technology- and kind-checked) ---
+# Catalogs stay unconfigured on import: importing this module must not read any
+# project file. An inbound adapter loads the active project's descriptions and calls
+# build_operations_registry() to bind them.
+CAN_SIGNAL = ResourceReference(technology=Technology.CAN, kinds=ObjectKind.SIGNAL,
+                               label='CAN-Signal', profile_kind='can_signal')
+LIN_SIGNAL = ResourceReference(technology=Technology.LIN, kinds=ObjectKind.SIGNAL,
+                               label='LIN-Signal')
+LIN_SCHEDULE = ResourceReference(technology=Technology.LIN, kinds=ObjectKind.SCHEDULE,
+                                 label='LIN-Schedule')
+LIN_FRAME = ResourceReference(technology=Technology.LIN, kinds=ObjectKind.FRAME,
+                              label='LIN-Frame')
+ETH_METHOD = ResourceReference(technology=Technology.ETHERNET, kinds=ObjectKind.METHOD,
+                               label='Service-Methode')
+ETH_EVENT = ResourceReference(technology=Technology.ETHERNET, kinds=ObjectKind.EVENT,
+                              label='Service-Event')
 
-    Fehlerbehandlung:
-    - Fehlende Datei -> FileNotFoundError
-    - Ungültiges JSON / ungültiges Schema -> SpecError
-    - Keine stillschweigenden Fallbacks auf festverdrahtete Demo-Zustände!
+# PHYSICAL values: what the tester writes in the specification, in its unit.
+CAN_SIGNAL_VALUE = SignalValue(BASE_CAN_SIGNAL_VALUE, technology=Technology.CAN)
+LIN_SIGNAL_VALUE = SignalValue(BASE_CAN_SIGNAL_VALUE, technology=Technology.LIN)
+# RAW values: the value on the bus, never scaled.
+CAN_SIGNAL_RAW = SignalValue(BASE_CAN_SIGNAL_VALUE, technology=Technology.CAN,
+                             semantics=RAW)
+LIN_SIGNAL_RAW = SignalValue(BASE_CAN_SIGNAL_VALUE, technology=Technology.LIN,
+                             semantics=RAW)
+
+EVENT_COUNT = DecimalType(Decimal('0'), Decimal('1000'))
+
+
+def build_operations_registry(catalog=None):
+    """Return a registry bound to one project's communication catalog.
+
+    `catalog` holds every network and technology the project configures; pass None
+    for a project that uses no bus descriptions at all.
+
+    The returned registry is a fresh, independent copy: REGISTRY and registries built
+    for other projects are untouched.
     """
-    if source is None:
-        source = Path(__file__).resolve().parent.parent / 'inputs' / 'can_signals.json'
+    return bind_registry(REGISTRY, {COMM_CATALOG_KEY: catalog or EMPTY_CATALOG})
 
-    if isinstance(source, (str, Path)):
-        path = Path(source)
-        if not path.is_file():
-            raise FileNotFoundError(f"CAN-Signaldatenbank nicht gefunden: {path}")
-        try:
-            with open(path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-        except json.JSONDecodeError as err:
-            raise SpecError(f"Beschädigte CAN-Signaldatenbank ({path.name}): {err}") from None
-        except OSError as err:
-            raise SpecError(f"Konnte CAN-Signaldatenbank nicht lesen ({path.name}): {err.strerror}") from None
-    elif isinstance(source, dict):
-        data = source
-    else:
-        raise SpecError(f"Ungültige CAN-Signaldatenbank-Quelle: {type(source).__name__}")
-
-    if not isinstance(data, dict) or 'signals' not in data or not isinstance(data['signals'], dict):
-        raise SpecError("Ungültiges Schema der CAN-Signaldatenbank: Schlüssel 'signals' fehlt oder ist kein Objekt")
-
-    signal_enums: dict[str, dict[str, Decimal]] = {}
-    all_known_states: set[str] = set()
-
-    for sname, sdata in data['signals'].items():
-        if isinstance(sdata, dict) and 'values' in sdata and isinstance(sdata['values'], dict):
-            enums_for_signal: dict[str, Decimal] = {}
-            for raw_val, desc in sdata['values'].items():
-                try:
-                    val = Decimal(str(raw_val))
-                except Exception:
-                    raise SpecError(f"Ungültiger Rohwert {raw_val!r} für Signal {sname!r} in CAN-Datenbank")
-                enums_for_signal[desc] = val
-                enums_for_signal[desc.replace(' ', '_')] = val
-                all_known_states.add(desc)
-                all_known_states.add(desc.replace(' ', '_'))
-            if enums_for_signal:
-                signal_enums[sname] = enums_for_signal
-
-    return signal_enums, all_known_states
-
-
-@dataclass
-class SymbolicCanSignalValue:
-    """Signalabhängige Quantity-Erweiterung für CAN-Signale: akzeptiert Zahlen/Einheiten und DBC-Enums."""
-    quantity: Quantity
-    signal_enums: dict[str, dict[str, Decimal]]
-    all_known_states: set[str]
-
-    def configure_database(self, source: str | Path | dict | None = None) -> None:
-        """Aktualisiert die Enum-Zustände aus einer expliziten Signaldatenbank."""
-        enums, states = load_can_signal_database(source)
-        self.signal_enums = enums
-        self.all_known_states = states
-
-    @property
-    def unit(self):
-        return self.quantity.unit
-
-    @property
-    def factors(self):
-        return self.quantity.factors
-
-    @property
-    def dimension(self):
-        return self.quantity.dimension
-
-    @property
-    def minimum(self):
-        return self.quantity.minimum
-
-    @property
-    def maximum(self):
-        return self.quantity.maximum
-
-    @property
-    def lexical(self):
-        return re.compile(
-            r'(?:-?(?:0|[1-9][0-9]*)(?:[.,][0-9]+)?(?:\s*[A-Za-z°%/Ω]+)?|[A-Za-z_][A-Za-z0-9_]*|"(?:[^"\\]|\\.)*")'
-        )
-
-    def convert(self, text, profile):
-        clean = text.strip('"\'')
-        from tcg.core.parameters import get_step_context
-        ctx = get_step_context()
-        sig = (ctx.get('signal') or ctx.get('can_signal')) if ctx else None
-        if sig is not None:
-            sig = sig.strip('"\'')
-
-        if sig is not None:
-            sig_enums = self.signal_enums.get(sig, {})
-            # 1. Exakter Match für dieses konkrete Signal
-            if clean in sig_enums:
-                return sig_enums[clean]
-            clean_norm = clean.replace(' ', '_').lower()
-            for k, v in sig_enums.items():
-                if k.lower() == clean.lower() or k.replace(' ', '_').lower() == clean_norm:
-                    return v
-
-            # 2. Wenn der Bezeichner ein bekannter Zustand ist, aber nicht zu DIESEM Signal gehört -> Fehler!
-            if clean in self.all_known_states or clean.replace('_', ' ') in self.all_known_states:
-                allowed = sorted(set(sig_enums.keys()))
-                allowed_str = f"gültige Zustände: {', '.join(allowed)}" if allowed else "keine (kontinuierliches Signal)"
-                raise SpecError(
-                    f"Zustand {clean!r} ist für CAN-Signal {sig!r} nicht gültig; {allowed_str}"
-                )
-        elif clean in self.all_known_states or clean.replace('_', ' ') in self.all_known_states:
-            raise SpecError(f"Symbolischer Zustand {clean!r} erfordert Signal-Kontext")
-
-        # 3. Standard-Zahlenkonvertierung oder Schleifenvariable
-        return self.quantity.convert(text, profile)
-
-
-_SIGNAL_ENUMS, _ALL_KNOWN_STATES = load_can_signal_database()
-CAN_SIGNAL_VALUE = SymbolicCanSignalValue(BASE_CAN_SIGNAL_VALUE, _SIGNAL_ENUMS, _ALL_KNOWN_STATES)
-
-
-def configure_can_database(source: str | Path | dict | None = None) -> None:
-    """Konfiguriert die aktive CAN-Signaldatenbank für alle CAN-Operationen."""
-    CAN_SIGNAL_VALUE.configure_database(source)
-
-
-_load_can_signal_enums = load_can_signal_database
 
 VEHICLE_SPEED_VALUE = Quantity(
     dimension='vehicle_speed',
@@ -242,6 +153,14 @@ SOC_VALUE = Quantity(
 # Phasen
 SETUP = frozenset({'PRECONDITION', 'ACTION', 'CLEANUP'})
 CHECK = frozenset({'EXPECTED'})
+
+# Benötigte Testbench-Fähigkeiten (siehe tcg.comm.capabilities)
+READ = frozenset({Capability.READ_SIGNAL.value})
+WRITE = frozenset({Capability.WRITE_SIGNAL.value})
+SEND_FRAME = frozenset({Capability.SEND_FRAME.value})
+SET_SCHEDULE = frozenset({Capability.SET_LIN_SCHEDULE.value})
+CALL_METHOD = frozenset({Capability.CALL_METHOD.value})
+SUBSCRIBE = frozenset({Capability.SUBSCRIBE_EVENT.value})
 
 # 2. Registrierung aller Operationen
 REGISTRY = build_registry((
@@ -292,25 +211,69 @@ REGISTRY = build_registry((
 
     # CAN-Bus & Vector / ControlDesk (can.py)
     OperationContract('set_can_signal', can.set_can_signal,
-                      (ParameterSpec('signal', CAN_SIGNAL), ParameterSpec('value', CAN_SIGNAL_VALUE)), SETUP),
+                      (ParameterSpec('signal', CAN_SIGNAL), ParameterSpec('value', CAN_SIGNAL_VALUE)), SETUP,
+                      WRITE),
     OperationContract('expect_can_signal', can.expect_can_signal,
-                      (ParameterSpec('signal', CAN_SIGNAL), ParameterSpec('value', CAN_SIGNAL_VALUE)), CHECK),
+                      (ParameterSpec('signal', CAN_SIGNAL), ParameterSpec('value', CAN_SIGNAL_VALUE)), CHECK, READ),
     OperationContract('expect_can_signal_tolerance', can.expect_can_signal_tolerance,
                       (ParameterSpec('signal', CAN_SIGNAL), ParameterSpec('value', CAN_SIGNAL_VALUE),
-                       ParameterSpec('tolerance', CAN_SIGNAL_VALUE)), CHECK),
+                       ParameterSpec('tolerance', CAN_TOLERANCE)), CHECK, READ),
     OperationContract('expect_can_signal_range', can.expect_can_signal_range,
                       (ParameterSpec('signal', CAN_SIGNAL), ParameterSpec('min_value', CAN_SIGNAL_VALUE),
-                       ParameterSpec('max_value', CAN_SIGNAL_VALUE)), CHECK),
+                       ParameterSpec('max_value', CAN_SIGNAL_VALUE)), CHECK, READ),
     OperationContract('expect_can_signal_min', can.expect_can_signal_min,
-                      (ParameterSpec('signal', CAN_SIGNAL), ParameterSpec('min_value', CAN_SIGNAL_VALUE)), CHECK),
+                      (ParameterSpec('signal', CAN_SIGNAL), ParameterSpec('min_value', CAN_SIGNAL_VALUE)), CHECK, READ),
     OperationContract('expect_can_signal_max', can.expect_can_signal_max,
-                      (ParameterSpec('signal', CAN_SIGNAL), ParameterSpec('max_value', CAN_SIGNAL_VALUE)), CHECK),
+                      (ParameterSpec('signal', CAN_SIGNAL), ParameterSpec('max_value', CAN_SIGNAL_VALUE)), CHECK, READ),
     OperationContract('expect_can_signal_greater', can.expect_can_signal_greater,
-                      (ParameterSpec('signal', CAN_SIGNAL), ParameterSpec('value', CAN_SIGNAL_VALUE)), CHECK),
+                      (ParameterSpec('signal', CAN_SIGNAL), ParameterSpec('value', CAN_SIGNAL_VALUE)), CHECK, READ),
     OperationContract('expect_can_signal_less', can.expect_can_signal_less,
-                      (ParameterSpec('signal', CAN_SIGNAL), ParameterSpec('value', CAN_SIGNAL_VALUE)), CHECK),
+                      (ParameterSpec('signal', CAN_SIGNAL), ParameterSpec('value', CAN_SIGNAL_VALUE)), CHECK, READ),
     OperationContract('wait_can_signal', can.wait_can_signal,
                       (ParameterSpec('signal', CAN_SIGNAL), ParameterSpec('value', CAN_SIGNAL_VALUE),
-                       ParameterSpec('timeout', DURATION), ParameterSpec('interval', INTERVAL)), CHECK),
+                       ParameterSpec('timeout', DURATION), ParameterSpec('interval', INTERVAL)), CHECK, READ),
+
+    # Rohwert-Varianten: ausdrücklich der Wert auf dem Bus, ohne Skalierung
+    OperationContract('set_can_signal_raw', can.set_can_signal,
+                      (ParameterSpec('signal', CAN_SIGNAL), ParameterSpec('value', CAN_SIGNAL_RAW)),
+                      SETUP, WRITE),
+    OperationContract('expect_can_signal_raw', can.expect_can_signal,
+                      (ParameterSpec('signal', CAN_SIGNAL), ParameterSpec('value', CAN_SIGNAL_RAW)),
+                      CHECK, READ),
+
+    # LIN: Signale teilen die Semantik mit CAN, Schedules sind LIN-spezifisch
+    OperationContract('set_lin_signal', can.set_can_signal,
+                      (ParameterSpec('signal', LIN_SIGNAL), ParameterSpec('value', LIN_SIGNAL_VALUE)),
+                      SETUP, WRITE),
+    OperationContract('expect_lin_signal', can.expect_can_signal,
+                      (ParameterSpec('signal', LIN_SIGNAL), ParameterSpec('value', LIN_SIGNAL_VALUE)),
+                      CHECK, READ),
+    OperationContract('set_lin_signal_raw', can.set_can_signal,
+                      (ParameterSpec('signal', LIN_SIGNAL), ParameterSpec('value', LIN_SIGNAL_RAW)),
+                      SETUP, WRITE),
+    OperationContract('set_lin_schedule', lin.set_lin_schedule,
+                      (ParameterSpec('schedule', LIN_SCHEDULE),), SETUP, SET_SCHEDULE),
+    OperationContract('expect_lin_schedule', lin.expect_lin_schedule,
+                      (ParameterSpec('schedule', LIN_SCHEDULE),), CHECK, SET_SCHEDULE),
+    OperationContract('send_lin_frame', lin.send_lin_frame,
+                      (ParameterSpec('frame', LIN_FRAME),), SETUP, SEND_FRAME),
+
+    # Ethernet: serviceorientiert, keine Signal-Semantik
+    OperationContract('call_service_method', ethernet.call_service_method,
+                      (ParameterSpec('method', ETH_METHOD),
+                       ParameterSpec('argument', String(), default=''),
+                       ParameterSpec('result_variable', String(), default='')),
+                      SETUP, CALL_METHOD),
+    OperationContract('expect_method_result', ethernet.expect_method_result,
+                      (ParameterSpec('method', ETH_METHOD),
+                       ParameterSpec('argument', String(), default=''),
+                       ParameterSpec('expected', String(), default='')),
+                      CHECK, CALL_METHOD),
+    OperationContract('subscribe_event', ethernet.subscribe_event,
+                      (ParameterSpec('event', ETH_EVENT),), SETUP, SUBSCRIBE),
+    OperationContract('expect_event_received', ethernet.expect_event_received,
+                      (ParameterSpec('event', ETH_EVENT),
+                       ParameterSpec('count', EVENT_COUNT, default=1)),
+                      CHECK, SUBSCRIBE),
 ))
 

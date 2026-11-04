@@ -19,8 +19,10 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
+    QMenu,
     QMessageBox,
     QPushButton,
+    QToolButton,
     QSplitter,
     QTabWidget,
     QTableWidget,
@@ -41,10 +43,161 @@ from tcg.gui.widget_smart_param import SmartParamWidget, build_smart_param_widge
 
 
 class CompactPathLabel(QLabel):
-    """QLabel that can shrink below its text width without forcing layout expansion."""
+    """QLabel that shrinks below its text width, eliding the text and keeping it in a tooltip.
+
+    The full text always stays reachable: whenever the visible text is shortened, the
+    untruncated value is offered as the tooltip.
+    """
+
+    def __init__(self, text: str = "", parent: QWidget | None = None):
+        super().__init__(parent)
+        self._full_text = ""
+        self.setText(text)
+
+    def setText(self, text: str) -> None:  # noqa: N802 - Qt naming
+        self._full_text = text or ""
+        self.setToolTip(self._full_text)
+        self._apply_elided_text()
+
+    def full_text(self) -> str:
+        return self._full_text
 
     def minimumSizeHint(self) -> QSize:
         return QSize(40, super().minimumSizeHint().height())
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 - Qt naming
+        super().resizeEvent(event)
+        self._apply_elided_text()
+
+    def _apply_elided_text(self) -> None:
+        available = max(0, self.width() - 4)
+        if not self._full_text or available <= 0:
+            QLabel.setText(self, self._full_text)
+            return
+        elided = self.fontMetrics().elidedText(self._full_text, Qt.TextElideMode.ElideMiddle,
+                                               available)
+        QLabel.setText(self, elided)
+
+
+class OverflowToolBar(QWidget):
+    """A one-row action bar that moves actions into an overflow menu when space runs short.
+
+    Buttons are kept at their natural width so a label is never squeezed into an
+    unreadable fragment. When the row does not fit, the lowest-priority actions move
+    into a labelled overflow menu, where they stay reachable with their full text.
+    """
+
+    def __init__(self, parent: QWidget | None = None):
+        super().__init__(parent)
+        self._entries: list[dict[str, Any]] = []
+        self._stretch_widget: QWidget | None = None
+        self._stretch_factor = 1
+        self._stretch_reserve = 160
+
+        self._layout = QHBoxLayout(self)
+        self._layout.setContentsMargins(0, 0, 0, 0)
+        self._layout.setSpacing(8)
+
+        self._overflow = QToolButton(self)
+        self._overflow.setText("Weitere Aktionen")
+        self._overflow.setToolTip("Weitere Aktionen dieser Werkzeugleiste anzeigen")
+        self._overflow.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self._overflow_menu = QMenu(self._overflow)
+        self._overflow.setMenu(self._overflow_menu)
+        # Leave room for the menu indicator so the caption is never clipped.
+        self._overflow.setMinimumWidth(self._overflow.sizeHint().width() + 14)
+        self._overflow.hide()
+
+    def add_button(self, button: QPushButton, priority: int = 0) -> QPushButton:
+        """Add an action. Lower `priority` moves into the overflow menu first."""
+        button.setParent(self)
+        button.setMinimumWidth(button.sizeHint().width())
+        self._entries.append({'button': button, 'priority': priority})
+        self._rebuild()
+        return button
+
+    def add_stretch_widget(self, widget: QWidget, stretch: int = 1,
+                           readable_width: int = 160) -> QWidget:
+        """Add the one widget that absorbs the remaining space (e.g. the file name).
+
+        `readable_width` is the space kept free for it before any action is moved into
+        the overflow menu, so a file name is never crushed to a meaningless stub while
+        buttons keep their place.
+        """
+        widget.setParent(self)
+        self._stretch_widget = widget
+        self._stretch_factor = stretch
+        self._stretch_reserve = readable_width
+        self._rebuild()
+        return widget
+
+    def minimum_full_width(self) -> int:
+        """Width needed to show every action plus a minimum for the stretch widget."""
+        spacing = self._layout.spacing() * max(0, len(self._entries))
+        buttons = sum(entry['button'].sizeHint().width() for entry in self._entries)
+        stretch = self._stretch_reserve if self._stretch_widget else 0
+        return buttons + stretch + spacing
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 - Qt naming
+        super().resizeEvent(event)
+        self._relayout()
+
+    def _rebuild(self) -> None:
+        while self._layout.count():
+            self._layout.takeAt(0)
+        for entry in self._entries:
+            self._layout.addWidget(entry['button'])
+            if self._stretch_widget is not None and entry is self._entries[0]:
+                self._layout.addWidget(self._stretch_widget, stretch=self._stretch_factor)
+        if self._stretch_widget is not None and not self._entries:
+            self._layout.addWidget(self._stretch_widget, stretch=self._stretch_factor)
+        self._layout.addWidget(self._overflow)
+        self._relayout()
+
+    def _relayout(self) -> None:
+        """Decide which actions stay in the row and which move into the overflow menu."""
+        available = self.width()
+        if available <= 0:
+            return
+        spacing = self._layout.spacing()
+        reserve = self._stretch_reserve if self._stretch_widget else 0
+
+        # Highest priority first: these are the actions we keep in the row the longest.
+        ordered = sorted(self._entries, key=lambda e: -e['priority'])
+        used, visible = reserve, []
+        for entry in ordered:
+            width = entry['button'].sizeHint().width() + spacing
+            if used + width <= available:
+                used += width
+                visible.append(entry)
+
+        hidden = [entry for entry in self._entries if entry not in visible]
+        if hidden:
+            overflow_width = self._overflow.sizeHint().width() + spacing
+            # Make room for the overflow button itself.
+            while visible and used + overflow_width > available:
+                dropped = min(visible, key=lambda e: e['priority'])
+                visible.remove(dropped)
+                hidden.append(dropped)
+                used -= dropped['button'].sizeHint().width() + spacing
+
+        for entry in self._entries:
+            entry['button'].setVisible(entry in visible)
+
+        self._overflow_menu.clear()
+        for entry in sorted(hidden, key=lambda e: self._entries.index(e)):
+            button = entry['button']
+            action = self._overflow_menu.addAction(button.text())
+            action.setToolTip(button.toolTip())
+            action.setEnabled(button.isEnabled())
+            action.setCheckable(button.isCheckable())
+            action.setChecked(button.isChecked())
+            action.triggered.connect(button.click)
+        self._overflow.setVisible(bool(hidden))
+
+    def refresh(self) -> None:
+        """Re-evaluate the row, e.g. after an action's enabled state changed."""
+        self._relayout()
 
 
 def detect_phase_at_cursor(editor: QTextEdit) -> str:
@@ -438,43 +591,48 @@ class SpecificationWorkspace(QWidget):
         editor_layout.setContentsMargins(0, 0, 0, 0)
         editor_layout.setSpacing(6)
 
-        editor_top = QHBoxLayout()
-        editor_top.setSpacing(8)
+        # The editor toolbar keeps full button labels and moves the least important
+        # actions into an overflow menu on narrow windows, so no action is lost and no
+        # caption is squeezed into an unreadable fragment.
+        editor_top = OverflowToolBar()
 
         self.btn_toggle_tree = QPushButton("Dateibaum")
         self.btn_toggle_tree.setCheckable(True)
         self.btn_toggle_tree.setChecked(True)
         self.btn_toggle_tree.setToolTip("Dateibaum links ein-/ausblenden")
         self.btn_toggle_tree.clicked.connect(self.toggle_tree_panel)
-        editor_top.addWidget(self.btn_toggle_tree)
+        editor_top.add_button(self.btn_toggle_tree, priority=1)
 
         self.lbl_current_file = CompactPathLabel("Keine Datei geöffnet")
         self.lbl_current_file.setFont(QFont("", 10, QFont.Weight.Bold))
-        editor_top.addWidget(self.lbl_current_file, stretch=2)
-
-        # Status badge for background analysis
-        self.lbl_analysis_status = CompactPathLabel("Bereit")
-        self.lbl_analysis_status.setFont(QFont("", 9, QFont.Weight.Bold))
-        editor_top.addWidget(self.lbl_analysis_status)
+        editor_top.add_stretch_widget(self.lbl_current_file, stretch=2)
 
         self.btn_save_spec = QPushButton("Speichern")
+        self.btn_save_spec.setToolTip("Aktuelle Spezifikation speichern")
         self.btn_save_spec.clicked.connect(self.save_current_spec)
         self.btn_save_spec.setEnabled(False)
-        editor_top.addWidget(self.btn_save_spec)
+        editor_top.add_button(self.btn_save_spec, priority=4)
 
         self.btn_recompile = QPushButton("Neu übersetzen")
+        self.btn_recompile.setToolTip("Aktuelle Spezifikation erneut übersetzen")
         self.btn_recompile.clicked.connect(lambda: self.compile_current_text(sync=True))
         self.btn_recompile.setEnabled(False)
-        editor_top.addWidget(self.btn_recompile)
+        editor_top.add_button(self.btn_recompile, priority=3)
 
         self.btn_toggle_inspector = QPushButton("Inspektor")
         self.btn_toggle_inspector.setCheckable(True)
         self.btn_toggle_inspector.setChecked(True)
         self.btn_toggle_inspector.setToolTip("Rechte Seitenleiste (Inspektor / Assistent / Python) ein-/ausblenden")
         self.btn_toggle_inspector.clicked.connect(self.toggle_inspector_panel)
-        editor_top.addWidget(self.btn_toggle_inspector)
+        editor_top.add_button(self.btn_toggle_inspector, priority=2)
 
-        editor_layout.addLayout(editor_top)
+        self.editor_toolbar = editor_top
+        editor_layout.addWidget(editor_top)
+
+        # Status line for the background analysis: always a readable word, never colour alone.
+        self.lbl_analysis_status = CompactPathLabel("Bereit")
+        self.lbl_analysis_status.setFont(QFont("", 9, QFont.Weight.Bold))
+        editor_layout.addWidget(self.lbl_analysis_status)
 
         # Vertical Splitter: Editor above, Multi-Tier Problem Table below
         self.edit_splitter = QSplitter(Qt.Orientation.Vertical)
@@ -569,6 +727,11 @@ class SpecificationWorkspace(QWidget):
         self.right_panel = QTabWidget()
         self.right_sidebar = self.right_panel
         self.right_panel.setMinimumWidth(0)
+        # On narrow windows elide the tab captions instead of hiding whole tabs behind
+        # scroll arrows: every tab stays clickable, and its full name stays in the tooltip.
+        self.right_panel.tabBar().setUsesScrollButtons(False)
+        self.right_panel.tabBar().setElideMode(Qt.TextElideMode.ElideRight)
+        self.right_panel.tabBar().setExpanding(False)
 
         # Tab 1: Details (Schritt-Inspektor)
         step_tab = QWidget()
@@ -656,12 +819,14 @@ class SpecificationWorkspace(QWidget):
         step_layout.addWidget(self.insp_details_widget)
 
         self.right_panel.addTab(step_tab, "Details")
+        self.right_panel.setTabToolTip(0, "Details zum gewählten Schritt")
         self.right_panel.setTabToolTip(0, "Schritt-Inspektor für die ausgewählte Zeile")
 
         # Tab 2: Schritt einfügen (Integrated Step Assistant)
         self.step_assistant = StepAssistantWidget(self.state, parent=self)
         self.step_assistant.insert_requested.connect(self.insert_statement_at_cursor)
-        self.right_panel.addTab(self.step_assistant, "Schritt einfügen")
+        self.right_panel.addTab(self.step_assistant, "Einfügen")
+        self.right_panel.setTabToolTip(1, "Schritt einfügen (Assistent)")
         self.right_panel.setTabToolTip(1, "Kontextbezogenen Testschritt formulieren und einfügen")
 
         # Tab 3: Python (Python-Vorschau)
@@ -682,6 +847,7 @@ class SpecificationWorkspace(QWidget):
         code_layout.addWidget(self.code_view)
 
         self.right_panel.addTab(code_tab, "Python")
+        self.right_panel.setTabToolTip(2, "Erzeugter Python-Code")
         self.right_panel.setTabToolTip(2, "Generierter Python-Testfallcode")
 
         main_splitter.addWidget(self.right_panel)

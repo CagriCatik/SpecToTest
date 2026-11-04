@@ -137,6 +137,10 @@ RUNNERS = {
     'TC_09_BMS_CELL_OVERVOLTAGE_DERATING': run_tc_09_bms_cell_overvoltage_derating,
 }
 
+REQUIRED_CAPABILITIES = {
+    'TC_09_BMS_CELL_OVERVOLTAGE_DERATING': ('read_signal', 'write_signal'),
+}
+
 if __name__ == '__main__':
     from tcg.runtime.runner import run_main
     raise SystemExit(run_main(RUNNERS))

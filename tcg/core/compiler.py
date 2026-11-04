@@ -8,6 +8,7 @@ from .expectations import (
     validate_expectations,
 )
 from .mapping import resolve, single_line_text
+from .parameters import convert_argument
 from .model import (
     BreakStatement,
     Loop,
@@ -73,6 +74,15 @@ def _make_id(prefix, used_ids):
     return candidate
 
 
+def _unresolved_identifier_hint(parameter, name):
+    """Let a parameter type explain an identifier that is neither a value nor a variable."""
+    if parameter is None:
+        return ''
+    describe = getattr(parameter.type, 'describe_unresolved_identifier', None)
+    hint = describe(name) if callable(describe) else None
+    return f'; {hint}' if hint else ''
+
+
 def _compile_command(execution_id, requested_phase, test_step, text, line, section,
                      source_file, mappings, profile, scope=(),
                      raw_loop_vars=None, converted_loop_vars=None):
@@ -88,20 +98,23 @@ def _compile_command(execution_id, requested_phase, test_step, text, line, secti
     # and validate all its possible values against the parameter contract!
     raw_loop_vars = raw_loop_vars or {}
     converted_loop_vars = converted_loop_vars if converted_loop_vars is not None else {}
+    resolved = dict(arguments)
     for param_name, param_val in arguments:
         if isinstance(param_val, VariableRef):
             var_name = param_val.name
+            matching_param = next((p for p in mapping.contract.parameters if p.name == param_name), None)
             if var_name not in scope:
-                raise SpecError(f'{where} ({execution_id}): variable {var_name!r} is undefined; in scope: {sorted(scope)}')
+                hint = _unresolved_identifier_hint(matching_param, var_name)
+                raise SpecError(f'{where} ({execution_id}): variable {var_name!r} is undefined; '
+                                f'in scope: {sorted(scope)}{hint}')
             if var_name in raw_loop_vars:
-                matching_param = next((p for p in mapping.contract.parameters if p.name == param_name), None)
                 if matching_param is not None:
                     converted_items = []
                     # Always validate the original raw items so dimensions/units are preserved!
                     for val in raw_loop_vars[var_name]:
                         val_str = str(val)
                         try:
-                            conv = matching_param.type.convert(val_str, profile)
+                            conv = convert_argument(matching_param, val_str, profile, resolved)
                             converted_items.append(conv)
                         except SpecError as err:
                             raise SpecError(

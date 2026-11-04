@@ -1,0 +1,78 @@
+{
+  "database": "vehicle_services",
+  "protocol": "Ethernet",
+  "autosar_version": "4.x",
+  "services": {
+    "DoorService": {
+      "service_id": 4660,
+      "someip": true,
+      "methods": {
+        "LockAllDoors": {
+          "id": 1
+        },
+        "UnlockAllDoors": {
+          "id": 2
+        },
+        "GetDoorState": {
+          "id": 3
+        }
+      },
+      "events": {
+        "DoorStateChanged": {
+          "id": 32769,
+          "data_type": "uint8"
+        },
+        "LockStateChanged": {
+          "id": 32770,
+          "data_type": "uint8"
+        }
+      },
+      "fields": {
+        "CentralLockState": {
+          "data_type": "uint8"
+        }
+      }
+    },
+    "ChargingService": {
+      "service_id": 4661,
+      "someip": true,
+      "methods": {
+        "StartCharging": {
+          "id": 1
+        },
+        "StopCharging": {
+          "id": 2
+        },
+        "SetChargeLimit": {}
+      },
+      "events": {
+        "ChargingStateChanged": {
+          "id": 32769,
+          "data_type": "uint8"
+        }
+      },
+      "fields": {
+        "ChargeLimitPercent": {
+          "data_type": "uint8"
+        },
+        "StateOfCharge": {
+          "data_type": "uint8"
+        }
+      }
+    },
+    "DiagnosticService": {
+      "service_id": null,
+      "someip": false,
+      "methods": {
+        "ReadFaultMemory": {},
+        "ClearFaultMemory": {}
+      },
+      "events": {
+        "FaultDetected": {
+          "data_type": "uint32"
+        }
+      },
+      "fields": {}
+    }
+  }
+}

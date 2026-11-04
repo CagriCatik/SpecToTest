@@ -131,6 +131,23 @@ def get_bench_factory(name: str):
     return BENCH_FACTORIES[name]
 
 
+def check_required_capabilities(required, bench):
+    """Verify the bench can serve the capabilities a generated test declares.
+
+    `required` is the REQUIRED_CAPABILITIES mapping of a generated module. A bench
+    that cannot perform a requested interaction fails here, before the test runs,
+    instead of silently reporting success.
+    """
+    from tcg.comm.capabilities import bench_capabilities, missing_for
+    available = bench_capabilities(bench)
+    missing = {}
+    for test_id, names in (required or {}).items():
+        absent = missing_for(names, available)
+        if absent:
+            missing[test_id] = absent
+    return missing, available
+
+
 def run_main(*pos_args, argv=None, bench_factory=None):
     """CLI runner invoked by generated test script __main__."""
     if len(pos_args) == 1:
@@ -162,6 +179,20 @@ def run_main(*pos_args, argv=None, bench_factory=None):
     bench_label = getattr(factory, 'BENCH_NAME', getattr(factory, '__name__', f'{args.bench_type} (Simulation)'))
 
     ids = (args.test_id,) if args.test_id else tuple(runners)
+
+    # Check bench capabilities at the adapter boundary, before any test runs.
+    required = getattr(sys.modules.get('__main__'), 'REQUIRED_CAPABILITIES', None)
+    if required:
+        missing, available = check_required_capabilities(
+            {test_id: required.get(test_id, ()) for test_id in ids}, factory(config))
+        if missing:
+            detail = '; '.join(f'{test_id}: {", ".join(names)}'
+                               for test_id, names in sorted(missing.items()))
+            print(f'SETUP FAILED: Testbench {bench_label!r} unterstützt benötigte '
+                  f'Fähigkeiten nicht -> {detail}; verfügbar: '
+                  f'{", ".join(sorted(available)) or "keine"}', file=sys.stderr)
+            return 3
+
     logs = [execute(runners[test_id], factory(config)) for test_id in ids]
     report_dict = {'results': [r.report() for r in logs]}
     if profile_id:

@@ -103,6 +103,10 @@ RUNNERS = {
     'TC_12_BMS_SIGNAL_TOLERANCES_AND_RANGES': run_tc_12_bms_signal_tolerances_and_ranges,
 }
 
+REQUIRED_CAPABILITIES = {
+    'TC_12_BMS_SIGNAL_TOLERANCES_AND_RANGES': ('read_signal', 'write_signal'),
+}
+
 if __name__ == '__main__':
     from tcg.runtime.runner import run_main
     raise SystemExit(run_main(RUNNERS))

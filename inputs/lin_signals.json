@@ -1,0 +1,389 @@
+{
+  "database": "body_comfort",
+  "protocol": "LIN",
+  "protocol_version": "2.1",
+  "speed_kbps": 19.2,
+  "nodes": {
+    "master": "BodyMaster",
+    "slaves": [
+      "DoorModuleFL",
+      "DoorModuleFR",
+      "MirrorModule",
+      "SeatModule",
+      "SensorModule"
+    ]
+  },
+  "frames": {
+    "LIN_Door_01": {
+      "id": "0x20",
+      "publisher": "DoorModuleFL",
+      "length": 3,
+      "layout": {
+        "DoorContactFL": 0,
+        "WindowPositionFL": 8,
+        "ErrDoorFL": 16
+      }
+    },
+    "LIN_Door_02": {
+      "id": "0x21",
+      "publisher": "DoorModuleFR",
+      "length": 1,
+      "layout": {
+        "DoorContactFR": 0,
+        "ErrDoorFR": 2
+      }
+    },
+    "LIN_Mirror_01": {
+      "id": "0x22",
+      "publisher": "MirrorModule",
+      "length": 3,
+      "layout": {
+        "MirrorPositionH": 0,
+        "MirrorPositionV": 8,
+        "ErrMirror": 16
+      }
+    },
+    "LIN_Seat_01": {
+      "id": "0x23",
+      "publisher": "SeatModule",
+      "length": 1,
+      "layout": {
+        "SeatOccupancy": 0,
+        "ErrSeat": 1
+      }
+    },
+    "LIN_Sensor_01": {
+      "id": "0x24",
+      "publisher": "SensorModule",
+      "length": 4,
+      "layout": {
+        "RainIntensity": 0,
+        "AmbientLight": 8,
+        "ErrSensor": 24
+      }
+    },
+    "LIN_Master_01": {
+      "id": "0x25",
+      "publisher": "BodyMaster",
+      "length": 1,
+      "layout": {
+        "LockState": 0,
+        "MirrorHeating": 2,
+        "SeatHeaterLevel": 4
+      }
+    }
+  },
+  "signals": {
+    "DoorContactFL": {
+      "frame": "LIN_Door_01",
+      "start_bit": 0,
+      "size": 2,
+      "init": 0,
+      "publisher": "DoorModuleFL",
+      "subscribers": [
+        "BodyMaster"
+      ],
+      "unit": "",
+      "factor": 1,
+      "offset": 0,
+      "encoding_type": "DoorContactEncoding",
+      "values": {
+        "0": "Geschlossen",
+        "1": "Offen",
+        "2": "Fehler"
+      }
+    },
+    "DoorContactFR": {
+      "frame": "LIN_Door_02",
+      "start_bit": 0,
+      "size": 2,
+      "init": 0,
+      "publisher": "DoorModuleFR",
+      "subscribers": [
+        "BodyMaster"
+      ],
+      "unit": "",
+      "factor": 1,
+      "offset": 0,
+      "encoding_type": "DoorContactEncoding",
+      "values": {
+        "0": "Geschlossen",
+        "1": "Offen",
+        "2": "Fehler"
+      }
+    },
+    "WindowPositionFL": {
+      "frame": "LIN_Door_01",
+      "start_bit": 8,
+      "size": 8,
+      "init": 0,
+      "publisher": "DoorModuleFL",
+      "subscribers": [
+        "BodyMaster"
+      ],
+      "unit": "%",
+      "factor": 0.5,
+      "offset": 0,
+      "min": 0,
+      "max": 255,
+      "encoding_type": "PercentEncoding"
+    },
+    "LockState": {
+      "frame": "LIN_Master_01",
+      "start_bit": 0,
+      "size": 2,
+      "init": 0,
+      "publisher": "BodyMaster",
+      "subscribers": [
+        "DoorModuleFL",
+        "DoorModuleFR"
+      ],
+      "unit": "",
+      "factor": 1,
+      "offset": 0,
+      "encoding_type": "LockStateEncoding",
+      "values": {
+        "0": "Entriegelt",
+        "1": "Verriegelt",
+        "2": "Safe"
+      }
+    },
+    "MirrorPositionH": {
+      "frame": "LIN_Mirror_01",
+      "start_bit": 0,
+      "size": 8,
+      "init": 128,
+      "publisher": "MirrorModule",
+      "subscribers": [
+        "BodyMaster"
+      ],
+      "unit": "deg",
+      "factor": 0.5,
+      "offset": -64,
+      "min": 0,
+      "max": 255,
+      "encoding_type": "PositionEncoding"
+    },
+    "MirrorPositionV": {
+      "frame": "LIN_Mirror_01",
+      "start_bit": 8,
+      "size": 8,
+      "init": 128,
+      "publisher": "MirrorModule",
+      "subscribers": [
+        "BodyMaster"
+      ],
+      "unit": "deg",
+      "factor": 0.5,
+      "offset": -64,
+      "min": 0,
+      "max": 255,
+      "encoding_type": "PositionEncoding"
+    },
+    "MirrorHeating": {
+      "frame": "LIN_Master_01",
+      "start_bit": 2,
+      "size": 1,
+      "init": 0,
+      "publisher": "BodyMaster",
+      "subscribers": [
+        "MirrorModule"
+      ],
+      "unit": "",
+      "factor": 1,
+      "offset": 0,
+      "encoding_type": "OnOffEncoding",
+      "values": {
+        "0": "Aus",
+        "1": "Ein"
+      }
+    },
+    "SeatHeaterLevel": {
+      "frame": "LIN_Master_01",
+      "start_bit": 4,
+      "size": 2,
+      "init": 0,
+      "publisher": "BodyMaster",
+      "subscribers": [
+        "SeatModule"
+      ],
+      "unit": "",
+      "factor": 1,
+      "offset": 0,
+      "encoding_type": "SeatHeaterEncoding",
+      "values": {
+        "0": "Aus",
+        "1": "Stufe 1",
+        "2": "Stufe 2",
+        "3": "Stufe 3"
+      }
+    },
+    "SeatOccupancy": {
+      "frame": "LIN_Seat_01",
+      "start_bit": 0,
+      "size": 1,
+      "init": 0,
+      "publisher": "SeatModule",
+      "subscribers": [
+        "BodyMaster"
+      ],
+      "unit": "",
+      "factor": 1,
+      "offset": 0,
+      "encoding_type": "OnOffEncoding",
+      "values": {
+        "0": "Aus",
+        "1": "Ein"
+      }
+    },
+    "RainIntensity": {
+      "frame": "LIN_Sensor_01",
+      "start_bit": 0,
+      "size": 8,
+      "init": 0,
+      "publisher": "SensorModule",
+      "subscribers": [
+        "BodyMaster"
+      ],
+      "unit": "%",
+      "factor": 0.5,
+      "offset": 0,
+      "min": 0,
+      "max": 255,
+      "encoding_type": "PercentEncoding"
+    },
+    "AmbientLight": {
+      "frame": "LIN_Sensor_01",
+      "start_bit": 8,
+      "size": 16,
+      "init": 0,
+      "publisher": "SensorModule",
+      "subscribers": [
+        "BodyMaster"
+      ],
+      "unit": "lux",
+      "factor": 1,
+      "offset": 0,
+      "min": 0,
+      "max": 65535,
+      "encoding_type": "LightEncoding"
+    },
+    "ErrDoorFL": {
+      "frame": "LIN_Door_01",
+      "start_bit": 16,
+      "size": 1,
+      "init": 0,
+      "publisher": "DoorModuleFL",
+      "subscribers": [
+        "BodyMaster"
+      ],
+      "unit": "",
+      "factor": 1,
+      "offset": 0
+    },
+    "ErrDoorFR": {
+      "frame": "LIN_Door_02",
+      "start_bit": 2,
+      "size": 1,
+      "init": 0,
+      "publisher": "DoorModuleFR",
+      "subscribers": [
+        "BodyMaster"
+      ],
+      "unit": "",
+      "factor": 1,
+      "offset": 0
+    },
+    "ErrMirror": {
+      "frame": "LIN_Mirror_01",
+      "start_bit": 16,
+      "size": 1,
+      "init": 0,
+      "publisher": "MirrorModule",
+      "subscribers": [
+        "BodyMaster"
+      ],
+      "unit": "",
+      "factor": 1,
+      "offset": 0
+    },
+    "ErrSeat": {
+      "frame": "LIN_Seat_01",
+      "start_bit": 1,
+      "size": 1,
+      "init": 0,
+      "publisher": "SeatModule",
+      "subscribers": [
+        "BodyMaster"
+      ],
+      "unit": "",
+      "factor": 1,
+      "offset": 0
+    },
+    "ErrSensor": {
+      "frame": "LIN_Sensor_01",
+      "start_bit": 24,
+      "size": 1,
+      "init": 0,
+      "publisher": "SensorModule",
+      "subscribers": [
+        "BodyMaster"
+      ],
+      "unit": "",
+      "factor": 1,
+      "offset": 0
+    }
+  },
+  "schedules": {
+    "NormalTable": [
+      {
+        "frame": "LIN_Master_01",
+        "delay_ms": 10
+      },
+      {
+        "frame": "LIN_Door_01",
+        "delay_ms": 10
+      },
+      {
+        "frame": "LIN_Door_02",
+        "delay_ms": 10
+      },
+      {
+        "frame": "LIN_Mirror_01",
+        "delay_ms": 20
+      },
+      {
+        "frame": "LIN_Seat_01",
+        "delay_ms": 20
+      },
+      {
+        "frame": "LIN_Sensor_01",
+        "delay_ms": 20
+      }
+    ],
+    "ParkedTable": [
+      {
+        "frame": "LIN_Master_01",
+        "delay_ms": 50
+      },
+      {
+        "frame": "LIN_Door_01",
+        "delay_ms": 50
+      },
+      {
+        "frame": "LIN_Door_02",
+        "delay_ms": 50
+      }
+    ],
+    "DiagnosticTable": [
+      {
+        "frame": "LIN_Sensor_01",
+        "delay_ms": 100
+      }
+    ]
+  },
+  "raw_blocks": {
+    "Nodes": "\n  Master: BodyMaster, 5 ms, 0.1 ms;\n  Slaves: DoorModuleFL, DoorModuleFR, MirrorModule, SeatModule, SensorModule;\n",
+    "Node_attributes": "\n  DoorModuleFL {\n    LIN_protocol = \"2.1\";\n    configured_NAD = 0x20;\n    initial_NAD = 0x20;\n    product_id = 0x0010, 0x0001, 1;\n    response_error = ErrDoorFL;\n    P2_min = 50 ms;\n    ST_min = 0 ms;\n    N_As_timeout = 1000 ms;\n    N_Cr_timeout = 1000 ms;\n    configurable_frames {\n      LIN_Door_01 = 0x0001;\n    }\n  }\n  DoorModuleFR {\n    LIN_protocol = \"2.1\";\n    configured_NAD = 0x21;\n    initial_NAD = 0x21;\n    product_id = 0x0010, 0x0002, 1;\n    response_error = ErrDoorFR;\n    P2_min = 50 ms;\n    ST_min = 0 ms;\n    N_As_timeout = 1000 ms;\n    N_Cr_timeout = 1000 ms;\n    configurable_frames {\n      LIN_Door_02 = 0x0002;\n    }\n  }\n  MirrorModule {\n    LIN_protocol = \"2.1\";\n    configured_NAD = 0x22;\n    initial_NAD = 0x22;\n    product_id = 0x0010, 0x0003, 1;\n    response_error = ErrMirror;\n    P2_min = 50 ms;\n    ST_min = 0 ms;\n    N_As_timeout = 1000 ms;\n    N_Cr_timeout = 1000 ms;\n    configurable_frames {\n      LIN_Mirror_01 = 0x0003;\n    }\n  }\n  SeatModule {\n    LIN_protocol = \"2.1\";\n    configured_NAD = 0x23;\n    initial_NAD = 0x23;\n    product_id = 0x0010, 0x0004, 1;\n    response_error = ErrSeat;\n    P2_min = 50 ms;\n    ST_min = 0 ms;\n    N_As_timeout = 1000 ms;\n    N_Cr_timeout = 1000 ms;\n    configurable_frames {\n      LIN_Seat_01 = 0x0004;\n    }\n  }\n  SensorModule {\n    LIN_protocol = \"2.1\";\n    configured_NAD = 0x24;\n    initial_NAD = 0x24;\n    product_id = 0x0010, 0x0005, 1;\n    response_error = ErrSensor;\n    P2_min = 50 ms;\n    ST_min = 0 ms;\n    N_As_timeout = 1000 ms;\n    N_Cr_timeout = 1000 ms;\n    configurable_frames {\n      LIN_Sensor_01 = 0x0005;\n    }\n  }\n"
+  }
+}

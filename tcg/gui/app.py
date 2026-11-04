@@ -202,6 +202,28 @@ class MappingStudioWindow(QMainWindow):
         self.setStatusBar(self.status_bar)
         self.status_bar.showMessage("Bereit")
 
+        # Permanent indicator for the active project's CAN signal catalog. It always
+        # carries a readable sentence; colour only reinforces the text.
+        self.lbl_catalog_status = QLabel()
+        self.status_bar.addPermanentWidget(self.lbl_catalog_status)
+        self.refresh_catalog_status()
+
+    def refresh_catalog_status(self):
+        """Show whether the active project's CAN signal catalog is usable."""
+        if not hasattr(self, 'lbl_catalog_status'):
+            return
+        tokens = get_theme_tokens(self.dark_theme)
+        text = self.state.catalog_status_text()
+        if self.state.catalog_error:
+            colour, prefix = tokens['error'], 'Nicht verfügbar'
+        elif self.state.catalog is None:
+            colour, prefix = tokens['text_muted'], 'Nicht konfiguriert'
+        else:
+            colour, prefix = tokens['success'], 'Geladen'
+        self.lbl_catalog_status.setText(f"Kommunikationskatalog: {prefix}")
+        self.lbl_catalog_status.setToolTip(text)
+        self.lbl_catalog_status.setStyleSheet(f"color: {colour}; padding: 0 8px;")
+
     @property
     def view_mappings(self):
         return self.workspace_catalog.view_mappings
@@ -310,6 +332,7 @@ class MappingStudioWindow(QMainWindow):
 
     def on_state_changed(self):
         self.update_header_stats()
+        self.refresh_catalog_status()
         self.workspace_catalog.refresh()
         if hasattr(self, 'workspace_specs'):
             self.workspace_specs.compile_timer.stop()
@@ -356,6 +379,7 @@ class MappingStudioWindow(QMainWindow):
             self.workspace_specs.analysis_manager.next_project_revision()
         self.workspace_specs.refresh_spec_list()
         self.on_state_changed()
+        self.refresh_catalog_status()
         self.status_bar.showMessage(f"Projektprofil gewechselt zu: {profile.name}", 5000)
 
     def switch_registry(self, target: str, resources: str | None = None, prompt_save: bool = True):

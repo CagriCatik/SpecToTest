@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Vehicle Service Interfaces: SpecToTest demo description.
+
+  Service-oriented Ethernet backbone companion to tools/powertrain_bms.dbc (CAN)
+  and tools/body_comfort.ldf (LIN). Covers only SERVICE-INTERFACE elements and
+  their optional SOME/IP deployment; see the README for the supported subset.
+
+  Convert it with tools/arxml_to_json.py (see that tool's help for the options).
+-->
+<AUTOSAR xmlns="http://autosar.org/schema/r4.0">
+  <AR-PACKAGES>
+
+    <AR-PACKAGE>
+      <SHORT-NAME>Services</SHORT-NAME>
+      <ELEMENTS>
+
+        <SERVICE-INTERFACE>
+          <SHORT-NAME>DoorService</SHORT-NAME>
+          <DESC>Zentralverriegelung und Türstatus</DESC>
+          <METHODS>
+            <CLIENT-SERVER-OPERATION>
+              <SHORT-NAME>LockAllDoors</SHORT-NAME>
+            </CLIENT-SERVER-OPERATION>
+            <CLIENT-SERVER-OPERATION>
+              <SHORT-NAME>UnlockAllDoors</SHORT-NAME>
+            </CLIENT-SERVER-OPERATION>
+            <CLIENT-SERVER-OPERATION>
+              <SHORT-NAME>GetDoorState</SHORT-NAME>
+            </CLIENT-SERVER-OPERATION>
+          </METHODS>
+          <EVENTS>
+            <VARIABLE-DATA-PROTOTYPE>
+              <SHORT-NAME>DoorStateChanged</SHORT-NAME>
+              <TYPE-TREF DEST="APPLICATION-PRIMITIVE-DATA-TYPE">/DataTypes/uint8</TYPE-TREF>
+            </VARIABLE-DATA-PROTOTYPE>
+            <VARIABLE-DATA-PROTOTYPE>
+              <SHORT-NAME>LockStateChanged</SHORT-NAME>
+              <TYPE-TREF DEST="APPLICATION-PRIMITIVE-DATA-TYPE">/DataTypes/uint8</TYPE-TREF>
+            </VARIABLE-DATA-PROTOTYPE>
+          </EVENTS>
+          <FIELDS>
+            <FIELD>
+              <SHORT-NAME>CentralLockState</SHORT-NAME>
+              <TYPE-TREF DEST="APPLICATION-PRIMITIVE-DATA-TYPE">/DataTypes/uint8</TYPE-TREF>
+            </FIELD>
+          </FIELDS>
+        </SERVICE-INTERFACE>
+
+        <SERVICE-INTERFACE>
+          <SHORT-NAME>ChargingService</SHORT-NAME>
+          <DESC>Ladesteuerung des Hochvoltsystems</DESC>
+          <METHODS>
+            <CLIENT-SERVER-OPERATION>
+              <SHORT-NAME>StartCharging</SHORT-NAME>
+            </CLIENT-SERVER-OPERATION>
+            <CLIENT-SERVER-OPERATION>
+              <SHORT-NAME>StopCharging</SHORT-NAME>
+            </CLIENT-SERVER-OPERATION>
+            <CLIENT-SERVER-OPERATION>
+              <SHORT-NAME>SetChargeLimit</SHORT-NAME>
+            </CLIENT-SERVER-OPERATION>
+          </METHODS>
+          <EVENTS>
+            <VARIABLE-DATA-PROTOTYPE>
+              <SHORT-NAME>ChargingStateChanged</SHORT-NAME>
+              <TYPE-TREF DEST="APPLICATION-PRIMITIVE-DATA-TYPE">/DataTypes/uint8</TYPE-TREF>
+            </VARIABLE-DATA-PROTOTYPE>
+          </EVENTS>
+          <FIELDS>
+            <FIELD>
+              <SHORT-NAME>ChargeLimitPercent</SHORT-NAME>
+              <TYPE-TREF DEST="APPLICATION-PRIMITIVE-DATA-TYPE">/DataTypes/uint8</TYPE-TREF>
+            </FIELD>
+            <FIELD>
+              <SHORT-NAME>StateOfCharge</SHORT-NAME>
+              <TYPE-TREF DEST="APPLICATION-PRIMITIVE-DATA-TYPE">/DataTypes/uint8</TYPE-TREF>
+            </FIELD>
+          </FIELDS>
+        </SERVICE-INTERFACE>
+
+        <SERVICE-INTERFACE>
+          <SHORT-NAME>DiagnosticService</SHORT-NAME>
+          <DESC>Fehlerspeicherzugriff ohne SOME/IP-Deployment</DESC>
+          <METHODS>
+            <CLIENT-SERVER-OPERATION>
+              <SHORT-NAME>ReadFaultMemory</SHORT-NAME>
+            </CLIENT-SERVER-OPERATION>
+            <CLIENT-SERVER-OPERATION>
+              <SHORT-NAME>ClearFaultMemory</SHORT-NAME>
+            </CLIENT-SERVER-OPERATION>
+          </METHODS>
+          <EVENTS>
+            <VARIABLE-DATA-PROTOTYPE>
+              <SHORT-NAME>FaultDetected</SHORT-NAME>
+              <TYPE-TREF DEST="APPLICATION-PRIMITIVE-DATA-TYPE">/DataTypes/uint32</TYPE-TREF>
+            </VARIABLE-DATA-PROTOTYPE>
+          </EVENTS>
+        </SERVICE-INTERFACE>
+
+      </ELEMENTS>
+    </AR-PACKAGE>
+
+    <AR-PACKAGE>
+      <SHORT-NAME>Deployment</SHORT-NAME>
+      <ELEMENTS>
+
+        <SOMEIP-SERVICE-INTERFACE-DEPLOYMENT>
+          <SHORT-NAME>DoorService</SHORT-NAME>
+          <SERVICE-INTERFACE-ID>4660</SERVICE-INTERFACE-ID>
+          <METHOD-DEPLOYMENTS>
+            <SOMEIP-METHOD-DEPLOYMENT>
+              <METHOD-REF DEST="CLIENT-SERVER-OPERATION">/Services/DoorService/LockAllDoors</METHOD-REF>
+              <METHOD-ID>1</METHOD-ID>
+            </SOMEIP-METHOD-DEPLOYMENT>
+            <SOMEIP-METHOD-DEPLOYMENT>
+              <METHOD-REF DEST="CLIENT-SERVER-OPERATION">/Services/DoorService/UnlockAllDoors</METHOD-REF>
+              <METHOD-ID>2</METHOD-ID>
+            </SOMEIP-METHOD-DEPLOYMENT>
+            <SOMEIP-METHOD-DEPLOYMENT>
+              <METHOD-REF DEST="CLIENT-SERVER-OPERATION">/Services/DoorService/GetDoorState</METHOD-REF>
+              <METHOD-ID>3</METHOD-ID>
+            </SOMEIP-METHOD-DEPLOYMENT>
+          </METHOD-DEPLOYMENTS>
+          <EVENT-DEPLOYMENTS>
+            <SOMEIP-EVENT-DEPLOYMENT>
+              <EVENT-REF DEST="VARIABLE-DATA-PROTOTYPE">/Services/DoorService/DoorStateChanged</EVENT-REF>
+              <EVENT-ID>32769</EVENT-ID>
+            </SOMEIP-EVENT-DEPLOYMENT>
+            <SOMEIP-EVENT-DEPLOYMENT>
+              <EVENT-REF DEST="VARIABLE-DATA-PROTOTYPE">/Services/DoorService/LockStateChanged</EVENT-REF>
+              <EVENT-ID>32770</EVENT-ID>
+            </SOMEIP-EVENT-DEPLOYMENT>
+          </EVENT-DEPLOYMENTS>
+        </SOMEIP-SERVICE-INTERFACE-DEPLOYMENT>
+
+        <SOMEIP-SERVICE-INTERFACE-DEPLOYMENT>
+          <SHORT-NAME>ChargingService</SHORT-NAME>
+          <SERVICE-INTERFACE-ID>4661</SERVICE-INTERFACE-ID>
+          <METHOD-DEPLOYMENTS>
+            <SOMEIP-METHOD-DEPLOYMENT>
+              <METHOD-REF DEST="CLIENT-SERVER-OPERATION">/Services/ChargingService/StartCharging</METHOD-REF>
+              <METHOD-ID>1</METHOD-ID>
+            </SOMEIP-METHOD-DEPLOYMENT>
+            <SOMEIP-METHOD-DEPLOYMENT>
+              <METHOD-REF DEST="CLIENT-SERVER-OPERATION">/Services/ChargingService/StopCharging</METHOD-REF>
+              <METHOD-ID>2</METHOD-ID>
+            </SOMEIP-METHOD-DEPLOYMENT>
+          </METHOD-DEPLOYMENTS>
+          <EVENT-DEPLOYMENTS>
+            <SOMEIP-EVENT-DEPLOYMENT>
+              <EVENT-REF DEST="VARIABLE-DATA-PROTOTYPE">/Services/ChargingService/ChargingStateChanged</EVENT-REF>
+              <EVENT-ID>32769</EVENT-ID>
+            </SOMEIP-EVENT-DEPLOYMENT>
+          </EVENT-DEPLOYMENTS>
+        </SOMEIP-SERVICE-INTERFACE-DEPLOYMENT>
+
+      </ELEMENTS>
+    </AR-PACKAGE>
+
+  </AR-PACKAGES>
+</AUTOSAR>

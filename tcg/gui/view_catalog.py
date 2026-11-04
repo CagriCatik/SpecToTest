@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
 from tcg.gui.dialog_editor import MappingEditorDialog
 from tcg.gui.models import MappingItem, MappingStudioState, OperationInfo
 from tcg.gui.styles import get_monospace_font, get_theme_tokens
+from tcg.gui.view_communication import CommunicationWorkspace
 from tcg.gui.view_mappings import MappingsView
 
 
@@ -61,6 +62,13 @@ class CatalogWorkspace(QWidget):
         self.view_mappings = MappingsView(self.state, on_change=self.on_child_change, parent=self)
         self.view_mappings.test_sentence_requested.connect(self.test_sentence_requested.emit)
         self.main_tabs.addTab(self.view_mappings, "Globale Mappings-Verwaltung")
+
+        # Tab 3: Kommunikation (Beschreibungen, Netzwerke, Objekte, Fähigkeiten).
+        # Deliberately a tab of the existing catalog workspace, not a separate
+        # application per bus type.
+        self.view_communication = CommunicationWorkspace(
+            self.state, on_change=self.on_child_change, parent=self)
+        self.main_tabs.addTab(self.view_communication, "Kommunikation")
 
         layout.addWidget(self.main_tabs)
 
@@ -172,6 +180,8 @@ class CatalogWorkspace(QWidget):
     def refresh(self):
         self.filter_operations_list()
         self.view_mappings.refresh()
+        if hasattr(self, 'view_communication'):
+            self.view_communication.refresh()
 
     def filter_operations_list(self):
         query = self.op_search.text().lower().strip()
@@ -337,6 +347,8 @@ class CatalogWorkspace(QWidget):
             self.lbl_op_doc.style().polish(self.lbl_op_doc)
         if hasattr(self, 'mappings_tab') and hasattr(self.mappings_tab, 'set_theme'):
             self.mappings_tab.set_theme(dark_theme)
+        if hasattr(self, 'view_communication'):
+            self.view_communication.set_theme(dark_theme)
         if getattr(self, 'current_selected_op', None):
             self.on_op_selected()
 

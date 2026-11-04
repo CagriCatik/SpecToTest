@@ -114,6 +114,10 @@ RUNNERS = {
     'TC_10_BMS_THERMAL_DERATING_SWEEP': run_tc_10_bms_thermal_derating_sweep,
 }
 
+REQUIRED_CAPABILITIES = {
+    'TC_10_BMS_THERMAL_DERATING_SWEEP': ('read_signal', 'write_signal'),
+}
+
 if __name__ == '__main__':
     from tcg.runtime.runner import run_main
     raise SystemExit(run_main(RUNNERS))

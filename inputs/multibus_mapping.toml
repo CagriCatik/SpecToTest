@@ -1,0 +1,83 @@
+# Optional sentence patterns for LIN and service-oriented Ethernet operations.
+#
+# Load this file in addition to operation_mapping.toml when a project configures LIN
+# or Ethernet descriptions under "communication". Signal references may be written
+# unqualified while they are unique, or qualified as Network::Frame::Signal.
+
+[[mapping]]
+id = "MAP_LIN_SET_SIGNAL"
+template = "LIN-Signal {signal} auf {wert} setzen"
+operation = "set_lin_signal"
+parameters = { signal = "signal", wert = "value" }
+
+[[mapping]]
+id = "MAP_LIN_SET_SIGNAL_RAW"
+template = "LIN-Signal {signal} auf Rohwert {wert} setzen"
+operation = "set_lin_signal_raw"
+parameters = { signal = "signal", wert = "value" }
+
+[[mapping]]
+id = "MAP_LIN_EXPECT_SIGNAL"
+template = "LIN-Signal {signal} ist {wert}"
+operation = "expect_lin_signal"
+parameters = { signal = "signal", wert = "value" }
+
+[[mapping]]
+id = "MAP_LIN_SET_SCHEDULE"
+template = "LIN-Schedule {schedule} aktivieren"
+operation = "set_lin_schedule"
+parameters = { schedule = "schedule" }
+
+[[mapping]]
+id = "MAP_LIN_EXPECT_SCHEDULE"
+template = "LIN-Schedule ist {schedule}"
+operation = "expect_lin_schedule"
+parameters = { schedule = "schedule" }
+
+[[mapping]]
+id = "MAP_LIN_SEND_FRAME"
+template = "LIN-Frame {frame} senden"
+operation = "send_lin_frame"
+parameters = { frame = "frame" }
+
+[[mapping]]
+id = "MAP_CAN_SET_SIGNAL_RAW"
+template = "CAN-Signal {signal} auf Rohwert {wert} setzen"
+operation = "set_can_signal_raw"
+parameters = { signal = "signal", wert = "value" }
+
+[[mapping]]
+id = "MAP_CAN_EXPECT_SIGNAL_RAW"
+template = "CAN-Signal {signal} hat Rohwert {wert}"
+operation = "expect_can_signal_raw"
+parameters = { signal = "signal", wert = "value" }
+
+[[mapping]]
+id = "MAP_ETH_CALL_METHOD"
+template = "Service-Methode {methode} aufrufen"
+operation = "call_service_method"
+parameters = { methode = "method" }
+
+[[mapping]]
+id = "MAP_ETH_CALL_METHOD_ARG"
+template = "Service-Methode {methode} mit Argument {argument} aufrufen"
+operation = "call_service_method"
+parameters = { methode = "method", argument = "argument" }
+
+[[mapping]]
+id = "MAP_ETH_EXPECT_RESULT"
+template = "Service-Methode {methode} liefert {erwartet}"
+operation = "expect_method_result"
+parameters = { methode = "method", erwartet = "expected" }
+
+[[mapping]]
+id = "MAP_ETH_SUBSCRIBE"
+template = "Service-Event {event} abonnieren"
+operation = "subscribe_event"
+parameters = { event = "event" }
+
+[[mapping]]
+id = "MAP_ETH_EXPECT_EVENT"
+template = "Service-Event {event} wurde empfangen"
+operation = "expect_event_received"
+parameters = { event = "event" }

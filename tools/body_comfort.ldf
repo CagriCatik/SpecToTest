@@ -1,0 +1,203 @@
+/* ===========================================================================
+ * Body & Comfort LIN Network -- SpecToTest demo description
+ *
+ * Companion to tools/powertrain_bms.dbc (CAN). Describes the comfort sub-bus
+ * behind the Body Control Module: door modules, exterior mirrors, seat heating
+ * and the rain/light sensor.
+ *
+ * Convert with:
+ *   python tools/ldf_to_json.py tools/body_comfort.ldf -o inputs/lin_signals.json --check
+ * =========================================================================== */
+LIN_description_file;
+LIN_protocol_version = "2.1";
+LIN_language_version = "2.1";
+LIN_speed = 19.2 kbps;
+
+Nodes {
+  Master: BodyMaster, 5 ms, 0.1 ms;
+  Slaves: DoorModuleFL, DoorModuleFR, MirrorModule, SeatModule, SensorModule;
+}
+
+Signals {
+  DoorContactFL: 2, 0, DoorModuleFL, BodyMaster;
+  DoorContactFR: 2, 0, DoorModuleFR, BodyMaster;
+  WindowPositionFL: 8, 0, DoorModuleFL, BodyMaster;
+  LockState: 2, 0, BodyMaster, DoorModuleFL, DoorModuleFR;
+  MirrorPositionH: 8, 128, MirrorModule, BodyMaster;
+  MirrorPositionV: 8, 128, MirrorModule, BodyMaster;
+  MirrorHeating: 1, 0, BodyMaster, MirrorModule;
+  SeatHeaterLevel: 2, 0, BodyMaster, SeatModule;
+  SeatOccupancy: 1, 0, SeatModule, BodyMaster;
+  RainIntensity: 8, 0, SensorModule, BodyMaster;
+  AmbientLight: 16, 0, SensorModule, BodyMaster;
+  ErrDoorFL: 1, 0, DoorModuleFL, BodyMaster;
+  ErrDoorFR: 1, 0, DoorModuleFR, BodyMaster;
+  ErrMirror: 1, 0, MirrorModule, BodyMaster;
+  ErrSeat: 1, 0, SeatModule, BodyMaster;
+  ErrSensor: 1, 0, SensorModule, BodyMaster;
+}
+
+Frames {
+  LIN_Door_01: 0x20, DoorModuleFL, 3 {
+    DoorContactFL, 0;
+    WindowPositionFL, 8;
+    ErrDoorFL, 16;
+  }
+  LIN_Door_02: 0x21, DoorModuleFR, 1 {
+    DoorContactFR, 0;
+    ErrDoorFR, 2;
+  }
+  LIN_Mirror_01: 0x22, MirrorModule, 3 {
+    MirrorPositionH, 0;
+    MirrorPositionV, 8;
+    ErrMirror, 16;
+  }
+  LIN_Seat_01: 0x23, SeatModule, 1 {
+    SeatOccupancy, 0;
+    ErrSeat, 1;
+  }
+  LIN_Sensor_01: 0x24, SensorModule, 4 {
+    RainIntensity, 0;
+    AmbientLight, 8;
+    ErrSensor, 24;
+  }
+  LIN_Master_01: 0x25, BodyMaster, 1 {
+    LockState, 0;
+    MirrorHeating, 2;
+    SeatHeaterLevel, 4;
+  }
+}
+
+Node_attributes {
+  DoorModuleFL {
+    LIN_protocol = "2.1";
+    configured_NAD = 0x20;
+    initial_NAD = 0x20;
+    product_id = 0x0010, 0x0001, 1;
+    response_error = ErrDoorFL;
+    P2_min = 50 ms;
+    ST_min = 0 ms;
+    N_As_timeout = 1000 ms;
+    N_Cr_timeout = 1000 ms;
+    configurable_frames {
+      LIN_Door_01 = 0x0001;
+    }
+  }
+  DoorModuleFR {
+    LIN_protocol = "2.1";
+    configured_NAD = 0x21;
+    initial_NAD = 0x21;
+    product_id = 0x0010, 0x0002, 1;
+    response_error = ErrDoorFR;
+    P2_min = 50 ms;
+    ST_min = 0 ms;
+    N_As_timeout = 1000 ms;
+    N_Cr_timeout = 1000 ms;
+    configurable_frames {
+      LIN_Door_02 = 0x0002;
+    }
+  }
+  MirrorModule {
+    LIN_protocol = "2.1";
+    configured_NAD = 0x22;
+    initial_NAD = 0x22;
+    product_id = 0x0010, 0x0003, 1;
+    response_error = ErrMirror;
+    P2_min = 50 ms;
+    ST_min = 0 ms;
+    N_As_timeout = 1000 ms;
+    N_Cr_timeout = 1000 ms;
+    configurable_frames {
+      LIN_Mirror_01 = 0x0003;
+    }
+  }
+  SeatModule {
+    LIN_protocol = "2.1";
+    configured_NAD = 0x23;
+    initial_NAD = 0x23;
+    product_id = 0x0010, 0x0004, 1;
+    response_error = ErrSeat;
+    P2_min = 50 ms;
+    ST_min = 0 ms;
+    N_As_timeout = 1000 ms;
+    N_Cr_timeout = 1000 ms;
+    configurable_frames {
+      LIN_Seat_01 = 0x0004;
+    }
+  }
+  SensorModule {
+    LIN_protocol = "2.1";
+    configured_NAD = 0x24;
+    initial_NAD = 0x24;
+    product_id = 0x0010, 0x0005, 1;
+    response_error = ErrSensor;
+    P2_min = 50 ms;
+    ST_min = 0 ms;
+    N_As_timeout = 1000 ms;
+    N_Cr_timeout = 1000 ms;
+    configurable_frames {
+      LIN_Sensor_01 = 0x0005;
+    }
+  }
+}
+
+Schedule_tables {
+  NormalTable {
+    LIN_Master_01 delay 10 ms;
+    LIN_Door_01 delay 10 ms;
+    LIN_Door_02 delay 10 ms;
+    LIN_Mirror_01 delay 20 ms;
+    LIN_Seat_01 delay 20 ms;
+    LIN_Sensor_01 delay 20 ms;
+  }
+  ParkedTable {
+    LIN_Master_01 delay 50 ms;
+    LIN_Door_01 delay 50 ms;
+    LIN_Door_02 delay 50 ms;
+  }
+  DiagnosticTable {
+    LIN_Sensor_01 delay 100 ms;
+  }
+}
+
+Signal_encoding_types {
+  DoorContactEncoding {
+    logical_value, 0, "Geschlossen";
+    logical_value, 1, "Offen";
+    logical_value, 2, "Fehler";
+  }
+  LockStateEncoding {
+    logical_value, 0, "Entriegelt";
+    logical_value, 1, "Verriegelt";
+    logical_value, 2, "Safe";
+  }
+  OnOffEncoding {
+    logical_value, 0, "Aus";
+    logical_value, 1, "Ein";
+  }
+  SeatHeaterEncoding {
+    logical_value, 0, "Aus";
+    logical_value, 1, "Stufe 1";
+    logical_value, 2, "Stufe 2";
+    logical_value, 3, "Stufe 3";
+  }
+  PositionEncoding {
+    physical_value, 0, 255, 0.5, -64, "deg";
+  }
+  PercentEncoding {
+    physical_value, 0, 255, 0.5, 0, "%";
+  }
+  LightEncoding {
+    physical_value, 0, 65535, 1, 0, "lux";
+  }
+}
+
+Signal_representation {
+  DoorContactEncoding: DoorContactFL, DoorContactFR;
+  LockStateEncoding: LockState;
+  OnOffEncoding: MirrorHeating, SeatOccupancy;
+  SeatHeaterEncoding: SeatHeaterLevel;
+  PositionEncoding: MirrorPositionH, MirrorPositionV;
+  PercentEncoding: WindowPositionFL, RainIntensity;
+  LightEncoding: AmbientLight;
+}

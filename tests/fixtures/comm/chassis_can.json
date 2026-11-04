@@ -1,0 +1,38 @@
+{
+  "database": "ChassisCAN",
+  "messages": {
+    "Chassis_01": {
+      "id": "0x200",
+      "dlc": 8
+    }
+  },
+  "signals": {
+    "VehicleSpeed": {
+      "message": "Chassis_01",
+      "start_bit": 0,
+      "length": 16,
+      "unit": "km/h",
+      "factor": 0.01,
+      "offset": 0,
+      "min": 0,
+      "max": 300
+    },
+    "DoorContactStatus": {
+      "message": "Chassis_01",
+      "start_bit": 16,
+      "length": 4,
+      "values": {
+        "5": "Geschlossen",
+        "6": "Offen"
+      }
+    },
+    "ChassisOnly": {
+      "message": "Chassis_01",
+      "start_bit": 20,
+      "length": 8,
+      "unit": "",
+      "factor": 1,
+      "offset": 0
+    }
+  }
+}

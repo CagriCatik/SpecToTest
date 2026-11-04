@@ -4,7 +4,7 @@ import re
 import tomllib
 
 from .model import SpecError
-from .parameters import reset_step_context, set_step_context
+from .parameters import convert_argument, dependencies_of, resolution_order
 
 
 MAPPING_KEYS = frozenset({'id', 'template', 'operation', 'parameters'})
@@ -77,6 +77,16 @@ def _bindings(bindings, placeholders, contract, where):
                if parameter.required and parameter.name not in targets]
     if missing:
         raise SpecError(f'{where}: required operation parameters not mapped: {", ".join(missing)}')
+    # A dependent parameter can only be converted if every sibling it declares is
+    # supplied by this template or carries a contract default.
+    available = set(targets) | {parameter.name for parameter in contract.parameters
+                                if not parameter.required}
+    for parameter in parameters:
+        unavailable = [name for name in dependencies_of(parameter.type) if name not in available]
+        if unavailable:
+            raise SpecError(f'{where}: parameter {parameter.name!r} of {contract.id} needs '
+                            f'{", ".join(unavailable)} in the same sentence; add a placeholder '
+                            f'bound to {", ".join(unavailable)}')
     return tuple(parameters)
 
 
@@ -218,32 +228,41 @@ def resolve(text, mappings, profile):
         details = '; '.join(mapping.id for mapping, _ in sorted(found, key=lambda item: item[0].id))
         raise SpecError(f'ambiguous: {len(found)} template matches for {text!r}: {details}')
     mapping, values = found[0]
-    converted, problems = {}, []
+    arguments = bind_arguments(mapping, values, profile)
+    return mapping, arguments
 
-    # Map placeholders to their raw matched values and store in sentence-level context
-    raw_params = {parameter.name: value for parameter, value in zip(mapping.parameters, values)}
-    token = set_step_context(raw_params)
 
-    # Dependency ordering: reference/resource parameters (e.g. 'signal', Resource types)
-    # are converted first, so dependent values always find their reference in context.
-    def _param_priority(item):
-        param, _ = item
-        if param.name == 'signal' or getattr(param.type, 'kind', None) is not None:
-            return 0
-        return 1
+def bind_arguments(mapping, values, profile):
+    """Bind one sentence's matched texts to the operation's named parameters.
 
-    ordered_pairs = sorted(zip(mapping.parameters, values), key=_param_priority)
-    try:
-        for parameter, value in ordered_pairs:
-            try:
-                converted[parameter.name] = parameter.type.convert(value, profile)
-            except SpecError as error:
-                problems.extend(f'{mapping.id}.{parameter.name}: {problem}' for problem in error.problems)
-    finally:
-        reset_step_context(token)
+    Three explicit steps, in this order:
 
+    1. Capture every matched text under the operation parameter it is bound to, plus
+       the contract defaults of parameters this template does not mention.
+    2. Order the parameters by the *contract* via `resolution_order`, so the sentence's
+       placeholder order never influences the result.
+    3. Convert each parameter, handing a dependent type the sibling arguments it
+       declared. A parameter whose dependency already failed is skipped rather than
+       reported a second time.
+    """
+    raw = {parameter.name: value for parameter, value in zip(mapping.parameters, values)}
+    converted = {parameter.name: parameter.default for parameter in mapping.contract.parameters
+                 if not parameter.required and parameter.name not in raw}
+    mapped = tuple(parameter for parameter in mapping.contract.parameters if parameter.name in raw)
+
+    problems, failed = [], set()
+    for parameter in resolution_order(mapped):
+        if any(name in failed for name in dependencies_of(parameter.type)):
+            failed.add(parameter.name)
+            continue
+        try:
+            converted[parameter.name] = convert_argument(parameter, raw[parameter.name],
+                                                         profile, converted)
+        except SpecError as error:
+            failed.add(parameter.name)
+            problems.extend(f'{mapping.id}.{parameter.name}: {problem}'
+                            for problem in error.problems)
     if problems:
         raise SpecError(problems)
-    arguments = tuple((parameter.name, converted.get(parameter.name, parameter.default))
-                      for parameter in mapping.contract.parameters)
-    return mapping, arguments
+    return tuple((parameter.name, converted.get(parameter.name, parameter.default))
+                 for parameter in mapping.contract.parameters)

@@ -1,10 +1,18 @@
 """Generic explicit operation contracts and signature verification."""
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import importlib
 import inspect
 import re
 
-from .model import PHASES
+from .model import PHASES, SpecError
+from .parameters import dependencies_of, resolution_order
+
+
+def capability_problems(names, where):
+    # Imported lazily so the generic core does not depend on the communication
+    # package at import time.
+    from tcg.comm.capabilities import capability_problems as check
+    return check(names, where)
 
 
 class ContractError(Exception):
@@ -36,6 +44,10 @@ class OperationContract:
     function: object
     parameters: tuple
     phases: frozenset
+    #: Test bench capabilities this operation needs (see tcg.comm.capabilities).
+    #: Declared here so the requirement travels with the contract and can be checked
+    #: at the bench adapter boundary before a test runs.
+    capabilities: frozenset = frozenset()
 
     def parameter(self, name):
         return next((parameter for parameter in self.parameters if parameter.name == name), None)
@@ -70,6 +82,8 @@ def signature_problems(contract):
     names = [parameter.name for parameter in contract.parameters]
     if len(names) != len(set(names)) or 'bench' in names:
         problems.append(f'duplicate or reserved parameter names {names}')
+    problems.extend(dependency_problems(contract))
+    problems.extend(capability_problems(contract.capabilities, 'capabilities'))
     parameters = list(inspect.signature(function).parameters.values())
     first = parameters[0] if parameters else None
     if first is None or first.name != 'bench' or first.default is not inspect.Parameter.empty or first.kind not in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD):
@@ -91,6 +105,44 @@ def signature_problems(contract):
         if not spec.required and (parameter.default is inspect.Parameter.empty or parameter.default != spec.default or type(parameter.default) is not type(spec.default)):
             problems.append(f'optional parameter {spec.name!r} default differs from contract')
     return problems
+
+
+def dependency_problems(contract):
+    """Check that every declared parameter dependency names a resolvable sibling."""
+    problems, names = [], {parameter.name for parameter in contract.parameters}
+    for parameter in contract.parameters:
+        for dependency in dependencies_of(parameter.type):
+            if dependency == parameter.name:
+                problems.append(f'parameter {parameter.name!r} depends on itself')
+            elif dependency not in names:
+                problems.append(f'parameter {parameter.name!r} depends on unknown '
+                                f'parameter {dependency!r}')
+    if not problems:
+        try:
+            resolution_order(contract.parameters)
+        except SpecError as error:
+            problems.extend(error.problems)
+    return problems
+
+
+def bind_registry(registry, project_data):
+    """Return a copy of `registry` whose parameter types are bound to the active project.
+
+    A parameter type that needs project configuration implements
+    `bind(project_data)` and returns a new, immutable instance; every other type is
+    reused unchanged. The input registry is never mutated, so two projects loaded in
+    one process cannot influence one another.
+    """
+    bound = {}
+    for operation_id, contract in registry.items():
+        parameters = tuple(
+            replace(parameter, type=parameter.type.bind(project_data))
+            if hasattr(parameter.type, 'bind') else parameter
+            for parameter in contract.parameters
+        )
+        bound[operation_id] = (contract if parameters == contract.parameters
+                               else replace(contract, parameters=parameters))
+    return bound
 
 
 def build_registry(contracts):

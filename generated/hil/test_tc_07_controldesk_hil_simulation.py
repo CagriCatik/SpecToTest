@@ -94,6 +94,10 @@ RUNNERS = {
     'TC_07_CONTROLDESK_HIL_SIMULATION': run_tc_07_controldesk_hil_simulation,
 }
 
+REQUIRED_CAPABILITIES = {
+    'TC_07_CONTROLDESK_HIL_SIMULATION': ('read_signal', 'write_signal'),
+}
+
 if __name__ == '__main__':
     from tcg.runtime.runner import run_main
     raise SystemExit(run_main(RUNNERS))

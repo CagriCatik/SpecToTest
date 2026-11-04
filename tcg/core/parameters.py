@@ -1,5 +1,26 @@
-"""Generic, deterministic parameter types used by operation contracts."""
-from contextvars import ContextVar, Token
+"""Generic, deterministic parameter types used by operation contracts.
+
+Parameter types are immutable value objects. A simple type converts one matched
+text on its own::
+
+    type.convert(text, profile) -> value
+
+A type whose meaning depends on a sibling argument of the *same* operation call
+declares the names of those siblings and receives them explicitly::
+
+    type.depends_on = ('signal',)
+    type.convert(text, profile, dependencies={'signal': 'DoorContactStatus'}) -> value
+
+Nothing is carried between calls: there is no ambient context, no module state and
+no "last used argument". `resolution_order` fixes the conversion order from the
+operation contract alone, so the order of placeholders in a sentence template is
+irrelevant. See `tcg/core/mapping.py:resolve` for the processing steps.
+
+A type may additionally offer `bind(project_data)`, returning a new instance bound
+to the active project's configuration (see `tcg.core.contracts.bind_registry`), and
+`describe_unresolved_identifier(name)`, contributing a hint when an identifier can
+be resolved neither as a value nor as a variable.
+"""
 from dataclasses import dataclass
 from decimal import Decimal as DecimalValue, InvalidOperation, localcontext
 import json
@@ -7,22 +28,59 @@ import re
 
 from .model import SpecError, VariableRef
 
-_step_context: ContextVar[dict[str, str] | None] = ContextVar('_step_context', default=None)
+DEPENDENCY_ATTRIBUTE = 'depends_on'
 
 
-def set_step_context(raw_parameters: dict[str, str]) -> Token:
-    """Setzt die Rohparameter der aktuellen Anweisung im Thread-/Task-Kontext."""
-    return _step_context.set(raw_parameters)
+def dependencies_of(parameter_type):
+    """Names of the sibling operation parameters this parameter type needs, if any."""
+    return tuple(getattr(parameter_type, DEPENDENCY_ATTRIBUTE, ()) or ())
 
 
-def get_step_context() -> dict[str, str] | None:
-    """Gibt die Rohparameter der aktuellen Anweisung zurück (oder None außerhalb von resolve)."""
-    return _step_context.get()
+def resolution_order(parameters):
+    """Order parameter specs so every dependency is converted before its dependents.
+
+    Input order decides ties, so passing the contract's own parameter tuple makes the
+    result independent of how a sentence template arranges its placeholders. Raises
+    SpecError on a dependency cycle.
+    """
+    parameters = tuple(parameters)
+    by_name = {parameter.name: parameter for parameter in parameters}
+    order, state = [], {}
+
+    def visit(parameter, trail):
+        status = state.get(parameter.name)
+        if status == 'done':
+            return
+        if status == 'active':
+            raise SpecError('cyclic parameter dependency: '
+                            f'{" -> ".join(trail + [parameter.name])}')
+        state[parameter.name] = 'active'
+        for name in dependencies_of(parameter.type):
+            dependency = by_name.get(name)
+            if dependency is not None:
+                visit(dependency, trail + [parameter.name])
+        state[parameter.name] = 'done'
+        order.append(parameter)
+
+    for parameter in parameters:
+        visit(parameter, [])
+    return tuple(order)
 
 
-def reset_step_context(token: Token) -> None:
-    """Setzt den Anweisungskontext nach der Auflösung zurück."""
-    _step_context.reset(token)
+def convert_argument(parameter, text, profile, resolved):
+    """Convert one matched text for `parameter`, passing it the siblings it declared.
+
+    `resolved` maps already converted sibling parameter names to their values.
+    """
+    names = dependencies_of(parameter.type)
+    if not names:
+        return parameter.type.convert(text, profile)
+    missing = [name for name in names if name not in resolved]
+    if missing:
+        raise SpecError(f'parameter {parameter.name!r} cannot be resolved without '
+                        f'{", ".join(missing)} in the same operation call')
+    return parameter.type.convert(text, profile,
+                                  dependencies={name: resolved[name] for name in names})
 
 
 IDENTIFIER_PATTERN = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')

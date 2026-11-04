@@ -90,6 +90,10 @@ RUNNERS = {
     'TC_06_CAN_SIGNAL_TRANSMISSION': run_tc_06_can_signal_transmission,
 }
 
+REQUIRED_CAPABILITIES = {
+    'TC_06_CAN_SIGNAL_TRANSMISSION': ('read_signal', 'write_signal'),
+}
+
 if __name__ == '__main__':
     from tcg.runtime.runner import run_main
     raise SystemExit(run_main(RUNNERS))

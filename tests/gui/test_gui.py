@@ -6,7 +6,7 @@ import unittest
 
 os.environ['QT_QPA_PLATFORM'] = 'offscreen'
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QComboBox
 
 from tcg.gui.app import MappingStudioWindow
 from tcg.gui.dialog_editor import MappingEditorDialog
@@ -110,7 +110,7 @@ class GuiValidationAndConflictTests(unittest.TestCase):
     def test_project_profile_switch_consistency(self):
         profiles = {p.id: p for p in get_builtin_profiles()}
         state = MappingStudioState(project_profile=profiles['automotive_hil'])
-        self.assertEqual(len(state.operations), 24)
+        self.assertEqual(len(state.operations), len(state.registry))
         self.assertEqual(state.profile_config.specs_dir, 'inputs')
 
         # Switch to service pilot
@@ -354,7 +354,7 @@ class GuiWindowWorkspacesIntegrationTests(unittest.TestCase):
         self.assertIn("non_existent_module", err)
         # Ensure state was not corrupted
         self.assertEqual(win.state.profile_config.id, initial_id)
-        self.assertEqual(len(win.state.operations), 24)
+        self.assertEqual(len(win.state.operations), len(win.state.registry))
 
     def test_profile_switch_rejects_corrupted_can_database(self):
         win = MappingStudioWindow()
@@ -377,7 +377,7 @@ class GuiWindowWorkspacesIntegrationTests(unittest.TestCase):
 
             ok, err = win.state.set_project_profile(broken_can_prof)
             self.assertFalse(ok)
-            self.assertIn("CAN-Signaldatenbank", err)
+            self.assertIn("Kommunikationsbeschreibung", err)
             self.assertEqual(win.state.profile_config.id, initial_id)
         finally:
             Path(bad_path).unlink(missing_ok=True)
@@ -467,6 +467,23 @@ class GuiWindowWorkspacesIntegrationTests(unittest.TestCase):
         self.assertIn("Gültig", assistant.lbl_verify.text())
         assistant.on_insert_clicked()
         self.assertIn("Warte 500 ms", specs.editor.toPlainText())
+
+    def test_step_assistant_selects_signals_from_the_communication_catalog(self):
+        win = MappingStudioWindow()
+        assistant = win.workspace_specs.step_assistant
+        assistant.set_phase("ACTION")
+
+        assistant.combo_ops.setCurrentIndex(assistant.combo_ops.findData("set_can_signal"))
+        assistant.on_operation_changed()
+
+        signal_widget = assistant.param_widgets["signal"].val_widget
+        self.assertIsInstance(signal_widget, QComboBox)
+        self.assertGreater(signal_widget.count(), 0)
+        selected = signal_widget.currentData()
+        self.assertTrue(selected.startswith("PowertrainCAN::"))
+        self.assertNotEqual(selected, "default")
+        self.assertIn(selected, assistant.txt_preview.text())
+        self.assertIn("Gültig", assistant.lbl_verify.text())
 
     def test_background_analysis_revision_tracking(self):
         win = MappingStudioWindow()

@@ -1,0 +1,9 @@
+# Entwicklungs- und Prüfabhängigkeiten.
+#
+# Diese Pakete werden NICHT zur Laufzeit benötigt: Compiler, Importer und Runner
+# kommen mit der Standardbibliothek aus. Sie dienen ausschließlich als unabhängige
+# Referenzimplementierungen, gegen die die eigenen Importer geprüft werden
+# (tests/conformance/). Fehlen sie, überspringen die Konformitätstests.
+
+ldfparser>=0.26        # unabhängige LIN-LDF-Referenz (MIT)
+cantools>=45.0         # unabhängige CAN-DBC- und ARXML-Referenz (MIT)

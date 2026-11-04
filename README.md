@@ -169,6 +169,16 @@ SpecToTest/
 │   │   ├── contracts.py                    # Operationsverträge (OperationContract, ParameterSpec)
 │   │   └── profile.py                      # Ressourcenprofil-Validierung (ECUs, Screens, Parameter)
 │   │
+│   ├── comm/                               # KOMMUNIKATION: technologieneutrales Ressourcenmodell
+│   │   ├── model.py                        # Technology, ObjectKind, Capability, Ressource, Katalog
+│   │   ├── catalog.py                      # Laden mehrerer Beschreibungen je Projekt (+ Migration)
+│   │   ├── capabilities.py                 # Benötigte vs. angebotene Testbench-Fähigkeiten
+│   │   └── importers/                      # Formatadapter -> gemeinsames Modell
+│   │       ├── can_json.py                 # Eigenes CAN-JSON-Format
+│   │       ├── dbc.py                      # Vector CANdb (.dbc)
+│   │       ├── ldf.py                      # LIN Description File (.ldf), dokumentierter Teilumfang
+│   │       └── arxml.py                    # AUTOSAR SERVICE-INTERFACE, dokumentierter Teilumfang
+│   │
 │   ├── ports/                              # PORTS: Abstrakte Schnittstellen & Protokolle
 │   │   ├── specification.py                # Driving Port: SpecificationParserPort
 │   │   ├── emitter.py                      # Driven Port: CodeEmitterPort
@@ -179,7 +189,7 @@ SpecToTest/
 │   │   │   └── text_parser.py              # Parst lesbare .txt-Spezifikationen
 │   │   └── outbound/                       # Driven Adapter
 │   │       ├── python_emitter.py           # Rendert sauberen, schlanken Python-Testcode
-│   │       └── dummy_bench.py              # In-Memory Prüfstand für deterministische Simulationen
+│   │       └── dummy_bench.py              # In-Memory Prüfstände (CAN/LIN/Ethernet-Simulation)
 │   │
 │   └── runtime/                            # RUNTIME: Ausführungsumgebung & Ergebnisse
 │       ├── result.py                       # TestResult (PASS, FAIL, ERROR, JSON-Report)
@@ -189,6 +199,10 @@ SpecToTest/
 ├── operations/                             # BENUTZER-OPERATIONEN (Modular & erweiterbar)
 │   ├── __init__.py                         # Paket-Export
 │   ├── registry.py                         # Zentrale Verträge (REGISTRY) für alle Operationen
+│   ├── can_catalog.py                      # CAN-Kompatibilitätsschicht über tcg/comm
+│   ├── comm_types.py                       # Ressourcenreferenz & Signalwert (physikalisch/roh)
+│   ├── lin.py                              # LIN-spezifische Operationen (Schedule, Frame)
+│   ├── ethernet.py                         # Serviceorientierte Ethernet-Operationen
 │   ├── ignition.py                         # Zündungs-Funktionen (set_ignition)
 │   ├── supply.py                           # Spannungsversorgungs-Funktionen (set_battery_voltage)
 │   ├── diagnostic.py                       # Fehlerspeicher & Diagnose (clear, read, expect, monitor)
@@ -196,8 +210,21 @@ SpecToTest/
 │   ├── hmi.py                              # Display & Parameter-Interaktion (screen, parameter)
 │   └── can.py                              # CAN-Signal Stimulation & Verifikation
 │
+├── requirements-dev.txt                    # Nur für Konformitätstests (ldfparser, cantools)
+│
+├── tools/                                  # Konverter & Beispiel-Busbeschreibungen
+│   ├── dbc_to_json.py                      # CAN:      .dbc  <-> JSON (+ Validierung)
+│   ├── ldf_to_json.py                      # LIN:      .ldf  <-> JSON (+ Validierung)
+│   ├── arxml_to_json.py                    # Ethernet: .arxml <-> JSON (+ Validierung)
+│   ├── powertrain_bms.dbc                  # Beispiel: Antrieb & BMS (CAN)
+│   ├── body_comfort.ldf                    # Beispiel: Komfort-Subbus (LIN)
+│   └── vehicle_services.arxml              # Beispiel: Service-Interfaces (Ethernet)
+│
 ├── inputs/                                 # Konfigurationen & kategorisierte Spezifikationen
-│   ├── can_signals.json                    # CAN-Signal-Datenbank (ID, Zykluszeit, Bit-Position, Einheit)
+│   ├── can_signals.json                    # CAN-Beschreibung  (protocol: CAN,      aus powertrain_bms.dbc)
+│   ├── lin_signals.json                    # LIN-Beschreibung  (protocol: LIN,      aus body_comfort.ldf)
+│   ├── eth_services.json                   # Service-Beschreibung (protocol: Ethernet, aus vehicle_services.arxml)
+│   ├── multibus_mapping.toml               # Optionale Satzmuster für LIN & Ethernet
 │   ├── demo_bench.json                     # Prüfstandskonfiguration (Schwellen, Delays, CAN-Defaults)
 │   ├── operation_mapping.toml              # Sprach-Mappings für den Compiler
 │   ├── resources.json                      # Zulässige Ressourcen (ECUs, Parameter, CAN-Signale)
@@ -487,7 +514,51 @@ classDiagram
 ```
 
 #### 1. CAN-Signal-Datenbank (`inputs/can_signals.json`)
-Statt Signale willkürlich zu hardcoden, definiert eine Signal-Datenbank (äquivalent zu einer Vector `.dbc` Datei) alle Eigenschaften der CAN-Signale:
+Statt Signale willkürlich zu hardcoden, definiert eine Signal-Datenbank (äquivalent zu einer Vector `.dbc` Datei) alle Eigenschaften der CAN-Signale.
+
+**Die Datenbank wird pro Projekt ausdrücklich konfiguriert.** Es gibt keine eingebauten
+Demo-Zustände und keinen impliziten Standardpfad: Der Signalkatalog des aktiven Projekts
+ist die einzige Quelle symbolischer Zustände.
+
+| Verbraucher | Konfiguration |
+| --- | --- |
+| CLI (`generate.py`) | `--can-database inputs/can_signals.json` |
+| GUI / Projektprofil | Feld `can_database` in der `ProjectProfile`-Konfiguration |
+| Python-API | `build_operations_registry(can_catalog=load_can_signal_catalog(pfad))` |
+
+Relative Pfade werden relativ zur Projektkonfiguration (`base_dir`) aufgelöst, nicht
+relativ zum Arbeitsverzeichnis. Ein Projekt ohne symbolische CAN-Zustände lässt
+`can_database` leer und benötigt keine Datenbank.
+
+Verwendet eine Spezifikation einen symbolischen Zustand, ohne dass ein Katalog
+konfiguriert ist, schlägt die Übersetzung mit einer erklärenden Meldung fehl (CLI:
+Exit-Status 2). Fehlende, beschädigte oder widersprüchliche Dateien führen ebenfalls zu
+einem sichtbaren Fehler — es gibt keine stillen Rückfälle auf alte oder eingebaute Werte.
+
+Beim Laden werden geprüft: JSON-Struktur und Feldtypen, doppelte JSON-Schlüssel (bevor
+ein Wert überschrieben wird), endliche numerische Enum-Werte sowie Zustandsnamen, die
+nach der Normalisierung (Leerzeichen ≙ Unterstrich, Groß-/Kleinschreibung ignoriert)
+mehrdeutig wären. Eine solche Kollision schlägt fehl, statt eine Zuordnung still zu
+überschreiben.
+
+Symbolische Zustände gelten **ausschließlich pro Signal**. Dieselbe Bezeichnung darf in
+zwei Signalen unterschiedliche Rohwerte haben:
+
+```json
+{
+  "signals": {
+    "DoorContactStatus": { "values": { "0": "Geschlossen", "1": "Offen" } },
+    "InterlockStatus":   { "values": { "0": "Offen", "1": "Geschlossen" } }
+  }
+}
+```
+
+`CAN-Signal DoorContactStatus auf Geschlossen setzen` ergibt damit `0`,
+`CAN-Signal InterlockStatus auf Geschlossen setzen` ergibt `1`. Ein Zustand, den das
+adressierte Signal nicht deklariert, wird abgelehnt — auch dann, wenn ein anderes Signal
+ihn kennt.
+
+Die vollständige Signaldefinition:
 
 ```json
 {
@@ -637,6 +708,361 @@ generated_specs = generate_boundary_suite(
 ```
 
 Ebenso können damit HMI-Parameter (`set_template="Parameter {name} auf {val} schreiben"`) oder andere Fachdomänen ohne Code-Änderung im Framework generiert werden.
+
+---
+
+## Kommunikationsarchitektur (CAN, LIN, Automotive Ethernet)
+
+Die CAN-Signaldatenbank ist der erste Anwendungsfall einer erweiterbaren
+Kommunikationsarchitektur. Vier Ebenen werden bewusst getrennt gehalten, weil ihre
+Vermischung Bus-Spezifika in den generischen Compiler sickern lässt:
+
+| Ebene | Beispiele | Ort im Code |
+| --- | --- | --- |
+| 1. Kommunikationstechnologie | CAN, LIN, Ethernet | `Technology` in `tcg/comm/model.py` |
+| 2. Beschreibungsformat | DBC, LDF, ARXML, JSON | Importer in `tcg/comm/importers/` |
+| 3. Kommunikationsobjekt | Signal, Frame, PDU, Service, Methode, Event, Feld, Schedule | `ObjectKind` |
+| 4. Testbench-Fähigkeit | lesen, schreiben, Frame senden, Schedule schalten, Methode rufen, Event abonnieren | `Capability` in `tcg/comm/capabilities.py` |
+
+Der Compiler sieht niemals DBC-, LDF- oder ARXML-Strukturen: Importadapter übersetzen
+in das gemeinsame Modell, der Compiler arbeitet ausschließlich darauf.
+
+### Identität und qualifizierte Referenzen
+
+Ein Signalname allein ist keine Identität. Dieselbe Bezeichnung darf in mehreren
+Netzwerken oder Frames vorkommen. Eine Ressource wird daher über ihre Herkunft
+adressiert:
+
+```text
+VehicleSpeed                                 # nur erlaubt, solange eindeutig
+PowertrainCAN::VehicleSpeed                  # Netzwerk qualifiziert
+PowertrainCAN::Drive_01::VehicleSpeed        # Netzwerk + Frame qualifiziert
+```
+
+Ist eine Kurzreferenz mehrdeutig, schlägt die Übersetzung mit einer Meldung fehl, die
+alle Treffer nennt. Projektweite Aliasse (`aliases` in der Projektkonfiguration)
+können eine Kurzform ausdrücklich auf eine qualifizierte Referenz festlegen.
+
+### Drei getrennte Ebenen der Benennung
+
+| Ebene | Wofür | Beispiel | Wird bestimmt durch |
+| --- | --- | --- | --- |
+| **Ressource** | Identität im Katalog | `BodyLIN::LIN_Door_01::DoorContactFL` | die Beschreibungsdatei |
+| **Projektalias** | Kurzform in Spezifikationen | `Fahrertuerkontakt` | `aliases` in der Projektkonfiguration |
+| **Adapteradresse** | Adresse am Prüfstand | `DoorContactFL` | `adapter_naming` / `adapter_names` der jeweiligen Beschreibung |
+
+**Eine Adapteradresse ändert sich nicht dadurch, dass ein weiteres Netzwerk geladen
+wird.** Sie folgt ausschließlich aus der eigenen Beschreibung und deren Richtlinie:
+
+| `adapter_naming` | Adresse |
+| --- | --- |
+| `local` (Standard) | `DoorContactFL` |
+| `prefixed` | `BodyLIN_DoorContactFL` |
+| `qualified` | `BodyLIN::LIN_Door_01::DoorContactFL` |
+
+`adapter_names` setzt einzelne Ressourcen ausdrücklich auf eine beliebige Adresse,
+etwa `{"VehicleSpeed": "XCP::Speed_kmh"}`.
+
+Beanspruchen zwei Beschreibungen dieselbe Adapteradresse, **schlägt das Laden mit
+einer Kollisionsmeldung fehl**, die beide Ressourcen nennt. Ein zweites Netzwerk kann
+bestehende Adressen also entweder unverändert lassen oder sichtbar scheitern — es
+kann sie nie unbemerkt verschieben. Mehrdeutige Kurzreferenzen *in Spezifikationen*
+scheitern davon unabhängig weiterhin (siehe oben).
+
+### Unterstützte Beschreibungsformate
+
+| Format | Importer | Technologie | Umfang |
+| --- | --- | --- | --- |
+| `can_json` | `importers/can_json.py` | CAN | Eigenes JSON-Format (`inputs/can_signals.json`): Botschaften, Signale, Skalierung, `values`-Enums |
+| `lin_json` | `importers/lin_json.py` | LIN | Eigenes JSON-Format (`inputs/lin_signals.json`): Frames, Signale, Schedules, Encodings |
+| `service_json` | `importers/service_json.py` | Ethernet | Eigenes JSON-Format (`inputs/eth_services.json`): Services, Methoden, Events, Felder |
+| `dbc` | `importers/dbc.py` | CAN | Vector CANdb: `BO_`, `SG_`, `VAL_`, `CM_`, Zykluszeit. Nicht unterstützt: erweitertes Multiplexing, beliebige Attributdefinitionen, Umgebungsvariablen |
+| `ldf` | `importers/ldf.py` | LIN | LIN 2.x: `Signals`, `Frames`, `Schedule_tables`, `Signal_encoding_types` (`logical_value`, `physical_value`), `Signal_representation`. Nicht unterstützt: Diagnose-Frames, `Node_attributes`, event-getriggerte und sporadische Frames, `bcd_value`/`ascii_value` |
+| `arxml` | `importers/arxml.py` | Ethernet | **ausschließlich** `SERVICE-INTERFACE` (METHODS, EVENTS, FIELDS) sowie `SOMEIP-SERVICE-INTERFACE-DEPLOYMENT` für IDs. Namensraumerkennung gegen reale 3.1.2/3.2.3/4.2-Dateien geprüft; der Service-Import selbst **nur gegen selbst erstellte Dateien** |
+
+**ARXML ist kein Bustyp.** Der Import deckt einen ausdrücklich begrenzten Ausschnitt
+ab. Die frühere Formulierung „AUTOSAR 4.x/3.x unterstützt“ war zu weit: unabhängig
+geprüft ist bislang nur die Ablehnung realer, nicht unterstützter Dateien dieser
+Versionen. Für den Service-Import lag **keine** fremde Datei mit `SERVICE-INTERFACE`
+vor; er ist daher nur gegen eigene Dateien validiert. **Nicht unterstützt:** ECU-Extracts, System-/Topologiebeschreibungen, CAN- oder
+LIN-Cluster in ARXML, Frame-/PDU-Mapping, Signal-zu-PDU-Packing, E2E- und
+SecOC-Eigenschaften, Datentransformation, CompuMethods und Unit-Auflösung sowie
+`PORT-PROTOTYPE`-Verdrahtung. Ein `SERVICE-INTERFACE`, das ein nicht unterstütztes
+Kindelement enthält, schlägt mit dessen Namen fehl — benötigte Konstrukte werden nie
+still verworfen. SOME/IP wird **nicht** vorausgesetzt: ein Deployment liefert lediglich
+Service- und Methoden-IDs als Attribute.
+
+### Beschreibungsdateien und Konverter (`tools/`)
+
+Zu jedem unterstützten Format liegen eine vollständige Beispielbeschreibung und ein
+bidirektionaler Konverter mit Validierung bei. Alle drei Konverter arbeiten nach
+demselben Muster (`<format>_to_json.py`), teilen sich die Parser mit den Importern und
+kommen ohne Fremdbibliotheken aus.
+
+| Technologie | Beispieldatei | Konverter | Inhalt des Beispiels |
+| --- | --- | --- | --- |
+| CAN | `tools/powertrain_bms.dbc` | `tools/dbc_to_json.py` | Antriebs- und BMS-Botschaften, 27 Signale, `VAL_`-Enums |
+| LIN | `tools/body_comfort.ldf` | `tools/ldf_to_json.py` | Komfort-Subbus: 6 Frames, 11 Signale, 3 Schedule-Tabellen, logische und physikalische Encodings |
+| Ethernet | `tools/vehicle_services.arxml` | `tools/arxml_to_json.py` | 3 Service-Interfaces mit Methoden, Events und Feldern; zwei davon mit SOME/IP-Deployment, eines bewusst ohne |
+
+Die erzeugten JSON-Dateien sind **vollwertige Beschreibungen**, keine reinen
+Berichte: ein Projekt kann statt der `.dbc`/`.ldf`/`.arxml` ebenso gut die JSON
+referenzieren. Weil sich alle drei die Endung `.json` teilen, trägt jede ein Feld
+`"protocol"` (`CAN`, `LIN`, `Ethernet`); der Loader wählt den Importer danach aus.
+Eine JSON ohne erkennbare Zuordnung wird abgelehnt, statt als CAN geraten zu werden.
+
+```bash
+# Beschreibung nach JSON wandeln und prüfen
+python tools/dbc_to_json.py   tools/powertrain_bms.dbc    -o inputs/can_signals.json  --check
+python tools/ldf_to_json.py   tools/body_comfort.ldf      -o inputs/lin_signals.json  --check
+python tools/arxml_to_json.py tools/vehicle_services.arxml -o inputs/eth_services.json --check
+
+# Nur prüfen, ohne etwas zu schreiben
+python tools/ldf_to_json.py tools/body_comfort.ldf --check
+
+# Rückrichtung: aus JSON wieder eine Beschreibungsdatei erzeugen
+python tools/ldf_to_json.py   inputs/lin_signals.json  -o out/body_comfort.ldf
+python tools/arxml_to_json.py inputs/eth_services.json -o out/vehicle_services.arxml
+```
+
+Exit-Status: `0` in Ordnung, `1` Validierungsbefunde gefunden, `2` Datei fehlt oder
+ist nicht lesbar/parsebar.
+
+**Geprüft wird jeweils fachlich, nicht nur syntaktisch:**
+
+* `ldf_to_json.py --check` — LIN-Identifier im Bereich `0x00..0x3F`, doppelte
+  Frame-IDs, Signale, die nicht in ihren Frame passen, überlappende Bitlagen,
+  Schedule-Einträge auf unbekannte Frames, nicht-positive Delays, Skalierungsfaktor
+  null, vertauschte min/max sowie Initial- und Zustandswerte, die nicht in die
+  Signalbreite passen.
+* `arxml_to_json.py --check` — gültige AUTOSAR-SHORT-NAMEs, leere Service-Interfaces,
+  SOME/IP-Wertebereiche (Service ≤ `0xFFFE`, Methode ≤ `0x7FFF`, Event
+  `0x8000..0xFFFF`), doppelte Service-, Methoden- und Event-IDs, als SOME/IP markierte
+  Services ohne Service-ID sowie Member-IDs ohne zugehöriges Deployment.
+
+Die Beispieldateien sind so angelegt, dass sie unmittelbar als Projektbeschreibung
+taugen:
+
+```bash
+python generate.py --spec specs --mapping inputs/operation_mapping.toml \
+  --mapping inputs/multibus_mapping.toml --resources inputs/resources.json \
+  --output generated \
+  --communication "PowertrainCAN=tools/powertrain_bms.dbc" \
+  --communication "BodyComfortLIN=tools/body_comfort.ldf" \
+  --communication "BackboneEth=tools/vehicle_services.arxml"
+```
+
+### Bibliotheksbewertung und Prüfstrategie
+
+Geprüft wurden `cantools`, `canmatrix` und `ldfparser` als fertige Parser:
+
+| Bibliothek | Lizenz | Laufzeit-Abhängigkeiten | DBC | LDF | ARXML |
+| --- | --- | --- | --- | --- | --- |
+| `cantools` 45.1 | MIT | `python-can`, `bitstruct`, `textparser`, `crccheck`, `argparse_addons` | ja | **nein** | ja (CAN-System/ECU-Extract) |
+| `canmatrix` 1.3 | BSD-2 | `click`, `attrs`, optional `lxml`, `ldfparser` | ja | nur über `ldfparser` | nur mit `lxml` |
+| `ldfparser` 0.26 | MIT | `jinja2`, `lark` | – | ja | – |
+
+**Richtigstellung zum früheren Bericht:** Die ursprüngliche Begründung („`cantools`
+zieht `python-can` nach, also verletzt es die Architekturgrenze“) war so nicht
+haltbar. Eine transitive Abhängigkeit verletzt für sich genommen keine Grenze — ein
+abgeschirmter Importadapter könnte eine Bibliothek nutzen, ohne dass der Core davon
+erfährt. Die Entscheidung stützt sich daher jetzt auf die Tabelle oben:
+
+* **Keine Bibliothek deckt alle drei Formate ab.** `cantools` kann kein LDF,
+  `ldfparser` kein DBC/ARXML. Man bräuchte zwei bis drei Abhängigkeiten plus eine
+  eigene Abbildung auf das gemeinsame Modell — der Parser ist dabei ohnehin nur ein
+  Teil der Arbeit.
+* **Das Produktversprechen ist eine Standardbibliotheks-Laufzeit.** Compiler und
+  Runner sollen in abgeschotteten Prüfstandsumgebungen ohne Paketinstallation
+  laufen.
+* **Eigene Parser bedeuten dauerhafte Verantwortung.** Genau deshalb sind die
+  Bibliotheken jetzt als *Prüfabhängigkeit* im Einsatz (siehe unten): sie bleiben
+  die Referenz, gegen die die eigenen Importer laufend gemessen werden.
+
+Ein bibliotheksgestützter Importer bleibt jederzeit nachrüstbar: `register_importer`
+nimmt ein beliebiges Modul auf, ohne dass der Core sich ändert. Wer die
+Wartungslast lieber abgibt, registriert einen cantools-Adapter und hat denselben
+Core.
+
+### Konformitätstests ausführen
+
+Die Referenzbibliotheken sind **reine Prüfabhängigkeiten** — Compiler, Importer und
+Runner brauchen sie nicht:
+
+```bash
+pip install -r requirements-dev.txt   # ldfparser, cantools
+python -m pytest tests/conformance -v
+```
+
+Fehlen sie, überspringen sich die Konformitätstests selbst, statt stillschweigend
+durchzulaufen. Der Korpus fremder Beschreibungsdateien liegt mit Herkunfts- und
+Lizenzangabe unter `tests/fixtures/comm/external/`.
+
+### Was tatsächlich geprüft wurde
+
+Round-trip durch den *eigenen* Importer und Exporter beweist nur interne
+Konsistenz. Teilen Importer und Exporter dieselbe falsche Annahme, gelingt der
+Round-trip trotzdem. `tests/conformance/` prüft deshalb zwei andere Richtungen:
+**fremde Dateien einlesen** und **eigene Exporte von fremden Werkzeugen lesen
+lassen**.
+
+| Importer | Fremde Eingabedateien | Unabhängige Referenz | Ergebnis |
+| --- | --- | --- | --- |
+| `ldf` | 12 Dateien aus `ldfparser` (LIN 1.3 / 2.0 / 2.1 / 2.2, ISO 17987, SAE J2602) | `ldfparser` 0.26 | Signale, Frames, Breiten, Einheiten, Faktor/Offset und symbolische Zustände stimmen feldweise überein; 11 von 12 Dateien importierbar |
+| `dbc` | `tools/powertrain_bms.dbc` | `cantools` 45.1 | Botschaften, Signale, Faktor/Offset, Einheit und `VAL_`-Zustände stimmen feldweise überein |
+| `arxml` | 5 reale AUTOSAR-Dateien (3.1.2, 3.2.3, 4.2) aus `cantools` | – | **Keine davon enthält ein `SERVICE-INTERFACE`.** Geprüft ist nur, dass sie sauber und mit verständlicher Meldung abgelehnt werden |
+| `lin_json`, `service_json`, `can_json` | die mitgelieferten `inputs/*.json` | der jeweilige Quell-Importer | Der Katalog aus der JSON ist objektweise identisch mit dem aus `.ldf` bzw. `.arxml` |
+
+**Exporte, von fremden Werkzeugen gegengelesen:**
+
+* Die erzeugte LDF wird von `ldfparser` akzeptiert (Frames, Slaves, Skalierung und
+  Zustände bleiben erhalten).
+* Die erzeugte DBC wird von `cantools` akzeptiert (Botschaften, IDs und Signale
+  bleiben erhalten).
+* Für ARXML gibt es **keinen** solchen Gegennachweis.
+
+Gefunden und behoben wurden dabei unter anderem: eine mitgelieferte LDF ohne das für
+LIN 2.0+ vorgeschriebene `Node_attributes` (von `ldfparser` abgelehnt), Frames ohne
+Längenangabe, Array-Initialwerte (`{5, 4, 3}`), Delays ohne Leerzeichen (`10ms`),
+Schedule-Kommandos, die als Frames gezählt wurden, hängende Schedule-Verweise auf
+Diagnose-, Event- und Sporadic-Frames sowie eine nicht-ASCII-kodierte DBC, die
+andere Werkzeuge als Mojibake lesen.
+
+### Unterstützungsgrad: importierbar, kompilierbar, ausführbar
+
+Diese drei Stufen sind ausdrücklich **nicht** dasselbe:
+
+| Stufe | Bedeutung |
+| --- | --- |
+| **importierbar** | Der Importer liest die Beschreibung in das gemeinsame Modell. |
+| **kompilierbar** | Es gibt Operationen, Verträge und Satzmuster, sodass Spezifikationen in Python-Testcode übersetzt werden. |
+| **ausführbar** | Ein konkreter Prüfstandsadapter führt die Interaktion tatsächlich aus. Der mitgelieferte Adapter ist eine **Simulation**. |
+
+| Technologie / Objekt | importierbar | kompilierbar | ausführbar (Simulation) | ausführbar (reale Hardware) |
+| --- | --- | --- | --- | --- |
+| CAN-Signal (DBC, JSON) | ja | ja | ja | **nicht enthalten** |
+| CAN-Frame | ja | nein (keine Operation) | – | **nicht enthalten** |
+| LIN-Signal (LDF) | ja | ja | ja | **nicht enthalten** |
+| LIN-Schedule | ja | ja | ja | **nicht enthalten** |
+| LIN-Frame senden | ja | ja | ja | **nicht enthalten** |
+| LIN Event-/Sporadic-Frame | ja (als Frame) | nein | – | **nicht enthalten** |
+| Ethernet-Service / -Methode | ja | ja | ja | **nicht enthalten** |
+| Ethernet-Event | ja | ja | ja | **nicht enthalten** |
+| Ethernet-Feld | ja | nein (keine Operation) | – | **nicht enthalten** |
+
+Für serviceorientierte Kommunikation sind zusätzlich drei Dinge auseinanderzuhalten:
+
+1. **Servicebeschreibung** — welche Methoden, Events und Felder ein Interface
+   deklariert. Das liefert der ARXML-Import.
+2. **Kommunikationsbindung** — wie der Service auf dem Netz erreichbar ist
+   (Service-/Methoden-IDs, Endpunkte, Serialisierung). Ein SOME/IP-Deployment
+   liefert davon nur die IDs; fehlt es, ist der Service beschrieben, aber nicht
+   gebunden.
+3. **Ausführbare Adapterunterstützung** — ob ein Prüfstandsadapter den Aufruf
+   wirklich ausführt. Das prüft die Fähigkeitsprüfung (`call_method`,
+   `subscribe_event`), und erfüllt wird es hier nur von der Simulation.
+
+Ein Service **ohne** SOME/IP-Deployment belegt deshalb nur Punkt 1: dass das Modell
+Servicebeschreibungen ohne Bindungsmetadaten aufnimmt. Er belegt **keine**
+alternative Ethernet-Anbindung.
+
+### Projektkonfiguration
+
+```json
+{
+  "communication": [
+    { "network": "PowertrainCAN", "technology": "can", "format": "dbc",
+      "path": "desc/powertrain.dbc" },
+    { "network": "BodyLIN",       "technology": "lin", "path": "desc/body.ldf" },
+    { "network": "BackboneEth",   "technology": "ethernet", "path": "desc/services.arxml" }
+  ],
+  "aliases": { "Tempo": "PowertrainCAN::VehicleSpeed" }
+}
+```
+
+`format` und `technology` sind optional; das Format wird sonst aus der Dateiendung
+abgeleitet. Relative Pfade werden gegen das Verzeichnis der Projektkonfiguration
+aufgelöst.
+
+**Migration.** Die bisherige Einzelangabe `can_database` funktioniert unverändert
+weiter: sie wird automatisch als eine Beschreibung des Formats `can_json` mit der
+Technologie CAN gelesen (`tcg.comm.catalog.migrate_can_database`). Ein Projekt muss
+erst auf `communication` umgestellt werden, wenn es mehrere Netzwerke oder weitere
+Formate nutzt.
+
+Auf der Kommandozeile:
+
+```bash
+python generate.py \
+  --spec inputs --mapping inputs/operation_mapping.toml \
+  --mapping inputs/multibus_mapping.toml \
+  --resources inputs/resources.json --output generated \
+  --communication "PowertrainCAN=desc/powertrain.dbc" \
+  --communication "BodyLIN=desc/body.ldf" \
+  --communication "BackboneEth=desc/services.arxml"
+```
+
+`--can-database` bleibt als Kurzform für eine einzelne CAN-JSON-Beschreibung erhalten.
+
+### Operationen je Technologie
+
+Gemeinsame Semantik bleibt gemeinsam, Unterschiede bleiben sichtbar. Es gibt
+ausdrücklich **kein** generisches `send_bus_data`, das fachliche Unterschiede in
+unstrukturierte Dictionaries verschieben würde.
+
+| Technologie | Operationen |
+| --- | --- |
+| CAN | `set_can_signal`, `expect_can_signal`, Toleranz/Bereich/Vergleiche, `wait_can_signal`, `*_raw` |
+| LIN | `set_lin_signal`, `expect_lin_signal`, `set_lin_signal_raw`, `set_lin_schedule`, `expect_lin_schedule`, `send_lin_frame` |
+| Ethernet | `call_service_method`, `expect_method_result`, `subscribe_event`, `expect_event_received` |
+
+Satzmuster für LIN und Ethernet liegen in `inputs/multibus_mapping.toml` und werden
+zusätzlich zu `inputs/operation_mapping.toml` geladen.
+
+### Physikalische Werte und Rohwerte
+
+Jede Operation legt ausdrücklich fest, womit sie arbeitet. Die Umrechnung erfolgt
+genau einmal:
+
+```text
+physikalisch = roh * factor + offset
+```
+
+* `set_can_signal` / `set_lin_signal` erwarten **physikalische** Werte in der Einheit
+  der Ressource (`CAN-Signal PackVoltage auf 400 V setzen`).
+* `set_can_signal_raw` / `set_lin_signal_raw` erwarten den **Rohwert** auf dem Bus.
+* Symbolische Zustände sind in allen Formaten als Rohwerte deklariert und werden für
+  physikalische Operationen genau einmal skaliert.
+
+### Testbench-Fähigkeiten
+
+Ein geladener Katalog beweist nicht, dass der aktive Prüfstand die beschriebenen
+Ressourcen bedienen kann. Jede Operation deklariert daher die benötigten Fähigkeiten,
+der Prüfstandsadapter deklariert die angebotenen:
+
+```python
+OperationContract('set_lin_schedule', lin.set_lin_schedule,
+                  (ParameterSpec('schedule', LIN_SCHEDULE),), SETUP, SET_SCHEDULE)
+```
+
+Generierte Testmodule tragen die Anforderung als `REQUIRED_CAPABILITIES`; der Runner
+prüft sie **vor** dem ersten Test an der Adaptergrenze und bricht mit Status 3 ab,
+wenn eine Fähigkeit fehlt. Es gibt bewusst keine Ersatzimplementierung, die Erfolg
+meldet, ohne die angeforderte Interaktion auszuführen. Ein Adapter ohne explizite
+`BENCH_CAPABILITIES` wird anhand der tatsächlich implementierten Methoden bewertet,
+kann also keine Fähigkeit behaupten, für die ihm die Implementierung fehlt.
+
+### GUI
+
+Der Reiter **Operationskatalog → Kommunikation** zeigt geladene Beschreibungen mit
+Status, Netzwerke und Kommunikationsobjekte, die qualifizierte Referenz und Herkunft
+einer Ressource, Mehrdeutigkeiten sowie die Fähigkeiten des konfigurierten
+Prüfstands. Es gibt keine getrennte Hauptanwendung je Bustyp.
+
+> **Hinweis zur Aussagekraft:** Alle mitgelieferten Prüfstände (`DummyBench`,
+> `VectorDummyBench`, `ControlDeskDummyBench`, `CanOnlyDummyBench`) sind
+> **Simulationen**. Bestandene Tests belegen die Übersetzung und die Testlogik, aber
+> **keine** reale CAN-, LIN- oder Ethernet-Integration und keinen SOME/IP-Stack.
 
 ---
 
@@ -796,6 +1222,49 @@ OK
    ```
 
 Fertig! Ab sofort kann der Satz `CAN-Botschaft 0x123 mit Payload AA BB CC senden` in jeder `.md`- oder `.txt`-Spezifikation verwendet werden. Der Compiler-Kern muss dafür **nicht** modifiziert werden.
+
+### Parameterbindung: Reihenfolge und Verantwortlichkeiten
+
+Die Bindung der Satzplatzhalter an die Operationsargumente läuft in `tcg/core/mapping.py`
+(`bind_arguments`) in drei ausdrücklichen Schritten ab:
+
+| Schritt | Verantwortlich | Aufgabe |
+| --- | --- | --- |
+| 1. Erfassen | `mapping.py` | Jeder gematchte Text wird unter dem **benannten Operationparameter** abgelegt, an den er gebunden ist. Nicht erwähnte optionale Parameter erhalten ihren Vertrags-Standardwert. |
+| 2. Ordnen | `parameters.resolution_order` | Die Parameter werden anhand des **Operationsvertrags** topologisch sortiert (Abhängigkeit vor Abhängigem, Zyklen werden abgelehnt). Die Platzhalterreihenfolge im Satz hat dabei keinen Einfluss. |
+| 3. Konvertieren | `parameters.convert_argument` | Jeder Parameter wird konvertiert. Ein abhängiger Typ erhält die von ihm **deklarierten Geschwisterargumente desselben Operationsaufrufs** explizit übergeben. |
+
+Es gibt keinen impliziten Kontext: kein „zuletzt verwendetes Signal“, keine globalen
+Variablen, keine ContextVars und keine Thread-Locals. Gleiche Eingaben und gleiche
+Projektkonfiguration ergeben dasselbe Ergebnis, unabhängig von vorherigen Übersetzungen.
+
+**Abhängige Parametertypen.** Ein Parametertyp, dessen Bedeutung von einem
+Geschwisterargument abhängt, deklariert dies generisch:
+
+```python
+@dataclass(frozen=True)
+class CanSignalValue:
+    depends_on = ('signal',)                     # benannte Geschwisterparameter
+
+    def convert(self, text, profile, dependencies):
+        signal = dependencies['signal']          # ausdrücklich, nie implizit
+        ...
+```
+
+Einfache, unabhängige Typen behalten ihre Signatur `convert(text, profile)`. Der
+generische Compiler kennt dabei keine CAN-Fachlogik und keine konkreten Operation-IDs —
+die CAN-Regeln liegen ausschließlich in `operations/can_catalog.py`.
+
+`tcg.core.contracts.build_registry` prüft beim Aufbau der Registry, dass jede deklarierte
+Abhängigkeit einen existierenden Geschwisterparameter benennt und zyklenfrei ist. Beim
+Laden der Satzmuster lehnt `load_mappings` ein Muster ab, das einen abhängigen Parameter
+bindet, ohne dessen Abhängigkeit im selben Satz bereitzustellen — ein Muster wie
+`"Setze Wert {wert}"` ohne `{signal}` schlägt also sichtbar fehl, statt zur Laufzeit zu raten.
+
+**Projektbindung.** `tcg.core.contracts.bind_registry(registry, project_data)` erzeugt eine
+neue Registry, in der jeder Parametertyp mit `bind(project_data)` an die Konfiguration des
+aktiven Projekts gebunden wird. Die Eingabe-Registry bleibt unverändert, daher können
+zwei Projekte in einem Prozess einander nicht beeinflussen.
 
 ---
 

@@ -1,0 +1,40 @@
+{
+  "database": "PowertrainCAN",
+  "messages": {
+    "Drive_01": {
+      "id": "0x100",
+      "dlc": 8
+    }
+  },
+  "signals": {
+    "VehicleSpeed": {
+      "message": "Drive_01",
+      "start_bit": 0,
+      "length": 16,
+      "unit": "km/h",
+      "factor": 1,
+      "offset": 0,
+      "min": 0,
+      "max": 300
+    },
+    "DoorContactStatus": {
+      "message": "Drive_01",
+      "start_bit": 16,
+      "length": 2,
+      "values": {
+        "0": "Geschlossen",
+        "1": "Offen"
+      }
+    },
+    "PowertrainOnly": {
+      "message": "Drive_01",
+      "start_bit": 20,
+      "length": 8,
+      "unit": "V",
+      "factor": 0.1,
+      "offset": 0,
+      "min": 0,
+      "max": 25
+    }
+  }
+}

@@ -147,6 +147,10 @@ RUNNERS = {
     'TC_08_BMS_HV_PRECHARGE_SEQUENCE': run_tc_08_bms_hv_precharge_sequence,
 }
 
+REQUIRED_CAPABILITIES = {
+    'TC_08_BMS_HV_PRECHARGE_SEQUENCE': ('read_signal', 'write_signal'),
+}
+
 if __name__ == '__main__':
     from tcg.runtime.runner import run_main
     raise SystemExit(run_main(RUNNERS))

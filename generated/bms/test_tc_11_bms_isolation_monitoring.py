@@ -104,6 +104,10 @@ RUNNERS = {
     'TC_11_BMS_ISOLATION_MONITORING': run_tc_11_bms_isolation_monitoring,
 }
 
+REQUIRED_CAPABILITIES = {
+    'TC_11_BMS_ISOLATION_MONITORING': ('read_signal', 'write_signal'),
+}
+
 if __name__ == '__main__':
     from tcg.runtime.runner import run_main
     raise SystemExit(run_main(RUNNERS))

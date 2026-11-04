@@ -15,9 +15,17 @@ import shutil
 import sys
 import tempfile
 
+from tcg.comm.model import EMPTY_CATALOG
+from tcg.comm.catalog import (
+    COMM_CATALOG_KEY,
+    DescriptionConfig,
+    load_catalog,
+    migrate_can_database,
+)
 from tcg.adapters.inbound.text_parser import read_text_spec
 from tcg.adapters.outbound.python_emitter import render_python
 from tcg.core.compiler import compile_cases
+from tcg.core.contracts import bind_registry
 from tcg.core.mapping import load_mapping
 from tcg.core.model import SpecError
 from tcg.core.profile import check_profile, load_profile
@@ -229,14 +237,39 @@ def generate_batch(spec_dir: Path, mapping, resources, output_dir: Path, registr
     return compiled_cases
 
 
-def load_registry(reference):
+def parse_communication_option(value):
+    """Parse one --communication argument: ``[NETWORK=]PATH[:FORMAT]``.
+
+    The network name defaults to the description's own name, the format to the one
+    implied by the file extension.
+    """
+    network, separator, path = str(value).partition('=')
+    if not separator:
+        network, path = '', network
+    path, _, declared_format = path.partition('::')
+    if not path:
+        raise ValueError(f'--communication {value!r}: Pfad fehlt')
+    return DescriptionConfig(path=path, network=network, format=declared_format)
+
+
+def load_registry(reference, can_database=None, communication=()):
+    """Load a registry and bind it to this run's communication catalog.
+
+    `communication` lists the project's description files (any technology and
+    format); `can_database` is the previous CAN-only option and is migrated into one
+    description. A configured description that cannot be loaded raises SpecError; it
+    is never replaced by a fallback.
+    """
     module_name, separator, attribute = reference.partition(':')
     if not separator or not module_name or not attribute:
         raise ValueError('--registry must use module:attribute syntax')
     registry = getattr(importlib.import_module(module_name), attribute)
     if not isinstance(registry, dict) or not registry:
         raise ValueError(f'{reference}: registry must be a non-empty dict')
-    return registry
+
+    descriptions = tuple(communication or ()) + migrate_can_database(can_database)
+    catalog = load_catalog(descriptions) if descriptions else EMPTY_CATALOG
+    return bind_registry(registry, {COMM_CATALOG_KEY: catalog})
 
 
 def main():
@@ -249,10 +282,20 @@ def main():
                         help='Filter specification format when scanning directories (default: all)')
     parser.add_argument('--log-dir', default='logs', help='Directory for translation logs (default: logs)')
     parser.add_argument('--registry', default='operations:REGISTRY', help='Trusted Python registry as module:attribute (default: operations:REGISTRY)')
+    parser.add_argument('--can-database', type=Path, default=None,
+                        help='CAN signal database (JSON) providing this project\'s symbolic '
+                             'signal states. Required only when specifications use symbolic '
+                             'CAN states; there is no built-in default. Shorthand for a '
+                             'single --communication entry.')
+    parser.add_argument('--communication', action='append', default=[], metavar='[NETWORK=]PATH[::FORMAT]',
+                        help='Communication description of one network (repeatable). '
+                             'The format is taken from the file extension unless given '
+                             'explicitly: can_json, dbc, ldf, arxml.')
     parser.add_argument('--runner', default='tcg.runtime.runner', help='Runner module used by generated __main__ (default: tcg.runtime.runner)')
     args = parser.parse_args()
     try:
-        registry = load_registry(args.registry)
+        communication = [parse_communication_option(item) for item in args.communication]
+        registry = load_registry(args.registry, args.can_database, communication)
         if args.spec.is_dir():
             fmt = None if args.format == 'all' else args.format
             cases = generate_batch(args.spec, args.mapping, args.resources, args.output, registry, args.runner, fmt, log_dir=args.log_dir)

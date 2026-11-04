@@ -98,6 +98,13 @@ class DummyBench(BenchPort):
         self.can_signals = dict(getattr(config, 'can_signals', None) or {})
         self.can_bus_active = True
         self.log_entries = []
+        # LIN and service-oriented Ethernet simulation state
+        self.lin_schedule = None
+        self.sent_frames = []
+        self.method_calls = []
+        self.method_results = dict(getattr(config, 'method_results', None) or {})
+        self.subscribed_events = set()
+        self.received_events = {}
         self._update()
 
     def _log(self, operation: str, **kwargs):
@@ -256,6 +263,43 @@ class DummyBench(BenchPort):
         return self.get_can_signal(variable)
 
 
+    # --- LIN (simulation) ---
+    def set_lin_schedule(self, schedule: str) -> None:
+        self.lin_schedule = schedule
+        self._log('set_lin_schedule', schedule=schedule, status='CONFIRMED')
+
+    def get_lin_schedule(self):
+        self._log('get_lin_schedule', schedule=str(self.lin_schedule))
+        return self.lin_schedule
+
+    def send_frame(self, frame: str) -> None:
+        self.sent_frames.append(frame)
+        self._log('send_frame', frame=frame, status='CONFIRMED')
+
+    # --- Service-oriented Ethernet (simulation) ---
+    def call_method(self, method: str, argument=''):
+        self.method_calls.append((method, argument))
+        result = self.method_results.get(method, '')
+        self._log('call_method', method=method, argument=str(argument),
+                  result=str(result))
+        return result
+
+    def subscribe_event(self, event: str) -> None:
+        self.subscribed_events.add(event)
+        # A subscription is what makes an event observable; the simulation records
+        # one delivery per subscription so a test can assert on it.
+        self.received_events[event] = self.received_events.get(event, 0) + 1
+        self._log('subscribe_event', event=event, status='CONFIRMED')
+
+    def received_event_count(self, event: str) -> int:
+        if event not in self.subscribed_events:
+            raise BenchResourceNotFoundError(
+                f"Event '{event}' was never subscribed on this test bench")
+        count = self.received_events.get(event, 0)
+        self._log('received_event_count', event=event, count=count)
+        return count
+
+
 class VectorDummyBench(DummyBench):
     """Spezifischer Testbench-Adapter mit Vector CANoe/CANalyzer-Semantik (Simulation)."""
     BENCH_NAME = "Vector CANoe Simulation (Dummy)"
@@ -264,5 +308,22 @@ class VectorDummyBench(DummyBench):
 class ControlDeskDummyBench(DummyBench):
     """Spezifischer Testbench-Adapter mit dSPACE ControlDesk HiL-Semantik (Simulation)."""
     BENCH_NAME = "dSPACE ControlDesk Simulation (Dummy)"
+
+
+class CanOnlyDummyBench(DummyBench):
+    """A bench that serves CAN signals only.
+
+    It declares its capabilities explicitly and does not implement LIN or service
+    operations, so requesting one fails visibly instead of being simulated away.
+    """
+    BENCH_NAME = "CAN-only Simulation (Dummy)"
+    BENCH_CAPABILITIES = frozenset({'read_signal', 'write_signal'})
+
+    set_lin_schedule = None
+    get_lin_schedule = None
+    send_frame = None
+    call_method = None
+    subscribe_event = None
+    received_event_count = None
 
 

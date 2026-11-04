@@ -1,5 +1,6 @@
 {
   "database": "Powertrain_BMS_CAN",
+  "protocol": "CAN",
   "baudrate": 500000,
   "messages": {
     "Power_01": {

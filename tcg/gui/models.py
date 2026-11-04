@@ -7,7 +7,9 @@ from pathlib import Path
 import re
 from typing import Any
 
-from tcg.core.contracts import OperationContract, ParameterSpec
+from tcg.comm.catalog import COMM_CATALOG_KEY, load_catalog
+from tcg.comm.model import EMPTY_CATALOG
+from tcg.core.contracts import OperationContract, ParameterSpec, bind_registry
 from tcg.core.mapping import (
     MAPPING_ID,
     NAME,
@@ -196,6 +198,8 @@ class MappingStudioState:
 
         self.registry: dict[str, OperationContract] = {}
         self.profile: ResourceProfile = ResourceProfile('EMPTY', {})
+        self.catalog = None
+        self.catalog_error: str | None = None
         self.mappings: list[MappingItem] = []
         self.operations: dict[str, OperationInfo] = {}
         self.is_dirty: bool = False
@@ -215,21 +219,64 @@ class MappingStudioState:
         # Commit state change atomically
         self.profile_config = profile
         self.registry_target = profile.registry_target
+        # The registry from test_validate_profile is already bound to this project's
+        # CAN signal catalog, so no separate configuration step can fall out of step.
         self.registry = artifacts['registry']
         self.profile = artifacts['profile']
+        self.catalog = artifacts.get('catalog')
+        self.catalog_error = None
         self.mapping_file = Path(profile.mapping_files[0]) if profile.mapping_files else None
         self.resources_file = Path(profile.resources_file) if profile.resources_file else None
-
-        if profile.can_database:
-            try:
-                from operations.registry import configure_can_database
-                configure_can_database(profile.can_database)
-            except Exception as e:
-                print(f"Warnung: Konnte CAN-Signaldatenbank nicht konfigurieren: {e}")
 
         self.set_mappings_from_dicts(artifacts['raw_mappings'])
         self.is_dirty = False
         return True, None
+
+    def _load_catalog(self):
+        """Load the active project's CAN signal catalog and bind the registry to it.
+
+        On failure the catalog is dropped and the error recorded: the registry is bound
+        to an unconfigured catalog, so CAN operations fail with a clear message instead
+        of silently reusing the catalog of a previous project.
+        """
+        self.catalog = None
+        self.catalog_error = None
+        profile = self.profile_config
+        try:
+            descriptions = profile.description_configs() if profile is not None else ()
+        except SpecError as error:
+            descriptions = ()
+            self.catalog_error = f'Kommunikationskonfiguration: {error}'
+        if descriptions and not self.catalog_error:
+            try:
+                self.catalog = load_catalog(
+                    descriptions, base_dir=profile.base_dir or None,
+                    aliases=getattr(profile, 'aliases', None))
+            except SpecError as error:
+                self.catalog_error = f'Kommunikationsbeschreibung: {error}'
+            except Exception as error:
+                self.catalog_error = f'Kommunikationsbeschreibung: {error}'
+        if self.catalog_error:
+            self.catalog = None
+            print(f'Fehler: {self.catalog_error}')
+        if self.registry:
+            self.registry = bind_registry(
+                self.registry,
+                {COMM_CATALOG_KEY: self.catalog or EMPTY_CATALOG})
+
+    @property
+    def communication_available(self) -> bool:
+        """Whether symbolic CAN states can be resolved for the active project."""
+        return self.catalog is not None and self.catalog_error is None
+
+    def catalog_status_text(self) -> str:
+        """A readable status line for the GUI; never colour alone."""
+        if self.catalog_error:
+            return f"Kommunikationskatalog: Fehler - {self.catalog_error}"
+        if self.catalog is None:
+            return "Kommunikationskatalog: nicht konfiguriert - symbolische Zustände nicht verfügbar"
+        return (f"Kommunikationskatalog: geladen - {len(self.catalog.resources)} "
+                f"Objekte aus {self.catalog.source}")
 
     def reload_all(self):
         """Reload registry, profile, and all mapping files of the active profile."""
@@ -245,12 +292,7 @@ class MappingStudioState:
             self.profile = ResourceProfile('EMPTY', {})
             print(f"Warnung: Konnte Profil '{self.resources_file}' nicht laden: {e}")
 
-        if self.profile_config and getattr(self.profile_config, 'can_database', None):
-            try:
-                from operations.registry import configure_can_database
-                configure_can_database(self.profile_config.can_database)
-            except Exception as e:
-                print(f"Warnung: Konnte CAN-Signaldatenbank nicht laden: {e}")
+        self._load_catalog()
 
         all_raw = []
         from tcg.gui.toml_io import load_mapping_file
