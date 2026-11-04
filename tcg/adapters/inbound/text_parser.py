@@ -36,6 +36,17 @@ SECTION_HEADING = re.compile(
 FOR_LOOP = re.compile(r'^(?:([0-9]+)[.:]\s*)?FOR\s*\(\s*([A-Za-z_]\w*)\s*;\s*\[([^\]]*)\]\s*\)$', re.IGNORECASE)
 END_FOR = re.compile(r'^(?:([0-9]+)[.:]\s*)?END\s+FOR$', re.IGNORECASE)
 BREAK_CMD = re.compile(r'^(?:([0-9]+)[.:]\s*)?BREAK(?:\s*\(\s*(.+?)\s*\))?$', re.IGNORECASE)
+
+IF_CMD = re.compile(r'^(?:([0-9]+)[.:]\s*)?IF\s*\(\s*(.+?)\s*\)$', re.IGNORECASE)
+ELSE_IF_CMD = re.compile(r'^(?:([0-9]+)[.:]\s*)?ELSE\s+IF\s*\(\s*(.+?)\s*\)$', re.IGNORECASE)
+ELSE_CMD = re.compile(r'^(?:([0-9]+)[.:]\s*)?ELSE$', re.IGNORECASE)
+END_IF = re.compile(r'^(?:([0-9]+)[.:]\s*)?END\s+IF$', re.IGNORECASE)
+
+SWITCH_CMD = re.compile(r'^(?:([0-9]+)[.:]\s*)?SWITCH\s*\(\s*([A-Za-z_]\w*)\s*\)$', re.IGNORECASE)
+CASE_CMD = re.compile(r'^(?:([0-9]+)[.:]\s*)?CASE\s*\(\s*(.+?)\s*\)$', re.IGNORECASE)
+DEFAULT_CMD = re.compile(r'^(?:([0-9]+)[.:]\s*)?DEFAULT$', re.IGNORECASE)
+END_SWITCH = re.compile(r'^(?:([0-9]+)[.:]\s*)?END\s+SWITCH$', re.IGNORECASE)
+
 GENERAL_CMD = re.compile(r'^(?:([0-9]+)[.:]\s*)?(.+)$')
 
 
@@ -187,6 +198,19 @@ def _parse_condition(raw_cond, path, line_number):
     return BinaryCondition(left, op, right)
 
 
+def _parse_case_value(raw_val):
+    text = raw_val.strip()
+    if (text.startswith('"') and text.endswith('"')) or (text.startswith("'") and text.endswith("'")):
+        return text[1:-1]
+    if text in ('True', 'False'):
+        return text == 'True'
+    if re.fullmatch(r'-?(?:0|[1-9][0-9]*)', text):
+        return int(text)
+    if re.fullmatch(r'-?(?:0|[1-9][0-9]*)\.[0-9]+', text):
+        return Decimal(text)
+    return text
+
+
 def _field(line, prefix, path, line_number):
     if not line.startswith(prefix):
         _error(path, line_number, f'expected {prefix!r}')
@@ -206,12 +230,20 @@ def parse_text_lines(raw_lines, source_name='test_spec.txt'):
     case = None
     state = 'START'
     current_section = None
-    loop_stack = []
+    block_stack = []
     sequence = {'Vorbedingungen': 0, 'Nachbedingungen': 0}
     in_block_comment = False
     in_html_comment = False
     block_comment_start_line = None
     html_comment_start_line = None
+
+    def current_target(line_no):
+        if not block_stack:
+            return sections[current_section]
+        entry = block_stack[-1]
+        if entry['active_body'] is None:
+            _error(source_file, line_no, f"statements inside {entry['type'].upper()} must be placed inside a branch (e.g. CASE/DEFAULT)")
+        return entry['active_body']
 
     def add_metadata():
         if case and not case['stored']:
@@ -223,11 +255,13 @@ def parse_text_lines(raw_lines, source_name='test_spec.txt'):
             case['stored'] = True
 
     def close_case(line_number):
-        nonlocal case, current_section, loop_stack
+        nonlocal case, current_section, block_stack
         if case is None:
             return
-        if loop_stack:
-            _error(source_file, line_number, f'{case["id"]}: unclosed FOR loop')
+        if block_stack:
+            top = block_stack[-1]['type']
+            name = "FOR loop" if top == "loop" else f"{top.upper()} block"
+            _error(source_file, line_number, f'{case["id"]}: unclosed {name}')
         add_metadata()
         case = None
         current_section = None
@@ -294,7 +328,7 @@ def parse_text_lines(raw_lines, source_name='test_spec.txt'):
             case = {'id': test_id, 'line': line_number, 'name': None,
                     'objective': None, 'stored': False}
             sequence = {'Vorbedingungen': 0, 'Nachbedingungen': 0}
-            loop_stack = []
+            block_stack = []
             current_section = None
             state = 'NAME'
             continue
@@ -313,8 +347,10 @@ def parse_text_lines(raw_lines, source_name='test_spec.txt'):
 
         match_section = SECTION_HEADING.match(line)
         if match_section:
-            if loop_stack:
-                _error(source_file, line_number, f'unclosed FOR loop before section {line!r}')
+            if block_stack:
+                top = block_stack[-1]['type']
+                name = "FOR loop" if top == "loop" else f"{top.upper()} block"
+                _error(source_file, line_number, f'unclosed {name} before section {line!r}')
             ensure_case(line_number)
             sec_name = match_section.group(1).lower().rstrip(':')
             current_section = SECTION_MAP[sec_name]
@@ -333,31 +369,140 @@ def parse_text_lines(raw_lines, source_name='test_spec.txt'):
             step_num = int(match_for[1]) if match_for[1] else None
             var_name = match_for[2]
             items = _parse_items(match_for[3], source_file, line_number)
+            loop_body = []
             loop_data = {
                 'Test_ID': case['id'],
                 'Schritt': step_num,
                 'type': 'loop',
                 'variable': var_name,
                 'items': items,
-                'body': [],
+                'body': loop_body,
             }
-            target = loop_stack[-1] if loop_stack else sections[current_section]
-            target.append((line_number, loop_data))
-            loop_stack.append(loop_data['body'])
+            current_target(line_number).append((line_number, loop_data))
+            block_stack.append({'type': 'loop', 'data': loop_data, 'active_body': loop_body})
             continue
 
         # Parse END FOR
         match_end = END_FOR.match(line)
         if match_end:
-            if not loop_stack:
+            if not block_stack:
                 _error(source_file, line_number, 'unexpected END FOR without active FOR loop')
-            loop_stack.pop()
+            if block_stack[-1]['type'] != 'loop':
+                _error(source_file, line_number, f"unclosed {block_stack[-1]['type'].upper()} block before END FOR")
+            block_stack.pop()
+            continue
+
+        # Parse IF
+        match_if = IF_CMD.match(line)
+        if match_if:
+            step_num = int(match_if[1]) if match_if[1] else None
+            cond = _parse_condition(match_if[2], source_file, line_number)
+            branch_body = []
+            if_data = {
+                'Test_ID': case['id'],
+                'Schritt': step_num,
+                'type': 'if',
+                'branches': [(step_num, cond, branch_body)],
+                'else_body': [],
+                'has_else': False,
+            }
+            current_target(line_number).append((line_number, if_data))
+            block_stack.append({'type': 'if', 'data': if_data, 'active_body': branch_body})
+            continue
+
+        # Parse ELSE IF
+        match_elif = ELSE_IF_CMD.match(line)
+        if match_elif:
+            if not block_stack or block_stack[-1]['type'] != 'if':
+                _error(source_file, line_number, 'ELSE IF without active IF block')
+            if block_stack[-1]['data']['has_else']:
+                _error(source_file, line_number, 'ELSE IF after ELSE is not allowed')
+            step_num = int(match_elif[1]) if match_elif[1] else None
+            cond = _parse_condition(match_elif[2], source_file, line_number)
+            branch_body = []
+            block_stack[-1]['data']['branches'].append((step_num, cond, branch_body))
+            block_stack[-1]['active_body'] = branch_body
+            continue
+
+        # Parse ELSE
+        match_else = ELSE_CMD.match(line)
+        if match_else:
+            if not block_stack or block_stack[-1]['type'] != 'if':
+                _error(source_file, line_number, 'ELSE without active IF block')
+            if block_stack[-1]['data']['has_else']:
+                _error(source_file, line_number, 'multiple ELSE branches in same IF block')
+            block_stack[-1]['data']['has_else'] = True
+            block_stack[-1]['active_body'] = block_stack[-1]['data']['else_body']
+            continue
+
+        # Parse END IF
+        match_end_if = END_IF.match(line)
+        if match_end_if:
+            if not block_stack:
+                _error(source_file, line_number, 'unexpected END IF without active IF block')
+            if block_stack[-1]['type'] != 'if':
+                _error(source_file, line_number, f"unclosed {block_stack[-1]['type'].upper()} block before END IF")
+            block_stack.pop()
+            continue
+
+        # Parse SWITCH
+        match_sw = SWITCH_CMD.match(line)
+        if match_sw:
+            step_num = int(match_sw[1]) if match_sw[1] else None
+            expr = match_sw[2].strip()
+            switch_data = {
+                'Test_ID': case['id'],
+                'Schritt': step_num,
+                'type': 'switch',
+                'expression': expr,
+                'cases': [],
+                'default_body': [],
+                'has_default': False,
+            }
+            current_target(line_number).append((line_number, switch_data))
+            block_stack.append({'type': 'switch', 'data': switch_data, 'active_body': None})
+            continue
+
+        # Parse CASE
+        match_case = CASE_CMD.match(line)
+        if match_case:
+            if not block_stack or block_stack[-1]['type'] != 'switch':
+                _error(source_file, line_number, 'CASE statement outside of SWITCH block')
+            if block_stack[-1]['data']['has_default']:
+                _error(source_file, line_number, 'CASE after DEFAULT is not allowed')
+            step_num = int(match_case[1]) if match_case[1] else None
+            case_val = _parse_case_value(match_case[2])
+            case_body = []
+            block_stack[-1]['data']['cases'].append((step_num, case_val, case_body))
+            block_stack[-1]['active_body'] = case_body
+            continue
+
+        # Parse DEFAULT
+        match_def = DEFAULT_CMD.match(line)
+        if match_def:
+            if not block_stack or block_stack[-1]['type'] != 'switch':
+                _error(source_file, line_number, 'DEFAULT statement outside of SWITCH block')
+            if block_stack[-1]['data']['has_default']:
+                _error(source_file, line_number, 'multiple DEFAULT branches in same SWITCH block')
+            block_stack[-1]['data']['has_default'] = True
+            block_stack[-1]['active_body'] = block_stack[-1]['data']['default_body']
+            continue
+
+        # Parse END SWITCH
+        match_end_sw = END_SWITCH.match(line)
+        if match_end_sw:
+            if not block_stack:
+                _error(source_file, line_number, 'unexpected END SWITCH without active SWITCH block')
+            if block_stack[-1]['type'] != 'switch':
+                _error(source_file, line_number, f"unclosed {block_stack[-1]['type'].upper()} block before END SWITCH")
+            block_stack.pop()
             continue
 
         # Parse BREAK
         match_break = BREAK_CMD.match(line)
         if match_break:
-            if not loop_stack:
+            has_loop = any(b['type'] == 'loop' for b in block_stack)
+            if not has_loop:
                 _error(source_file, line_number, 'BREAK statement occurs outside of any FOR loop')
             step_num = int(match_break[1]) if match_break[1] else None
             cond = _parse_condition(match_break[2], source_file, line_number) if match_break[2] else None
@@ -367,7 +512,7 @@ def parse_text_lines(raw_lines, source_name='test_spec.txt'):
                 'type': 'break',
                 'condition': cond,
             }
-            loop_stack[-1].append((line_number, break_data))
+            current_target(line_number).append((line_number, break_data))
             continue
 
         # Regular command
@@ -385,8 +530,7 @@ def parse_text_lines(raw_lines, source_name='test_spec.txt'):
                 sequence[current_section] += 1
                 cmd_data['Reihenfolge'] = sequence[current_section]
 
-            target = loop_stack[-1] if loop_stack else sections[current_section]
-            target.append((line_number, cmd_data))
+            current_target(line_number).append((line_number, cmd_data))
             continue
 
         _error(source_file, line_number, f'unrecognized specification statement: {line!r}')

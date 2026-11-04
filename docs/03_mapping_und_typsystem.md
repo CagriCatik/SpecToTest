@@ -146,3 +146,4 @@ Der Compiler stellt sicher, dass jede Testanweisung eindeutig ist:
   ```text
   SpecError: ambiguous: 2 template matches for 'Zündung an': MAP_IGNITION; MAP_IGNITION_ALT
   ```
+

@@ -77,7 +77,42 @@ class Step:
 class Loop:
     variable: str
     items: tuple
-    body: tuple  # tuple of Step | BreakStatement | Loop
+    body: tuple  # tuple of Step | BreakStatement | Loop | IfBlock | SwitchBlock
+    step_label: int | None
+    source: SourceRef
+    phase: str  # PRECONDITION, ACTION, CLEANUP
+
+
+@dataclass(frozen=True)
+class IfBranch:
+    condition: BinaryCondition
+    body: tuple
+    step_label: int | None
+    source: SourceRef
+
+
+@dataclass(frozen=True)
+class IfBlock:
+    branches: tuple[IfBranch, ...]
+    else_body: tuple
+    step_label: int | None
+    source: SourceRef
+    phase: str  # PRECONDITION, ACTION, CLEANUP
+
+
+@dataclass(frozen=True)
+class SwitchCase:
+    value: object
+    body: tuple
+    step_label: int | None
+    source: SourceRef
+
+
+@dataclass(frozen=True)
+class SwitchBlock:
+    expression: str
+    cases: tuple[SwitchCase, ...]
+    default_body: tuple
     step_label: int | None
     source: SourceRef
     phase: str  # PRECONDITION, ACTION, CLEANUP
@@ -89,17 +124,25 @@ class TestCase:
     name: str
     objective: str | None
     profile_id: str
-    steps: tuple  # tuple of Step | Loop
+    steps: tuple  # tuple of Step | Loop | IfBlock | SwitchBlock
     raw_spec: str | None = None
 
     def all_steps(self):
-        """Yield all Step instances recursively (including those nested inside loops)."""
+        """Yield all Step instances recursively (including inside loops, ifs and switches)."""
         def _collect(items):
             for item in items:
                 if isinstance(item, Step):
                     yield item
                 elif isinstance(item, Loop):
                     yield from _collect(item.body)
+                elif isinstance(item, IfBlock):
+                    for branch in item.branches:
+                        yield from _collect(branch.body)
+                    yield from _collect(item.else_body)
+                elif isinstance(item, SwitchBlock):
+                    for case in item.cases:
+                        yield from _collect(case.body)
+                    yield from _collect(item.default_body)
         yield from _collect(self.steps)
 
 

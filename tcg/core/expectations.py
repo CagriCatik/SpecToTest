@@ -18,6 +18,20 @@ def collect_step_numbers(rows):
             steps.add(s_num)
         if item_type == 'loop':
             steps.update(collect_step_numbers(data.get('body', [])))
+        elif item_type == 'if':
+            for b_step, _, b_body in data.get('branches', []):
+                if b_step is not None:
+                    steps.add(b_step)
+                steps.update(collect_step_numbers(b_body))
+            if data.get('else_body'):
+                steps.update(collect_step_numbers(data.get('else_body', [])))
+        elif item_type == 'switch':
+            for c_step, _, c_body in data.get('cases', []):
+                if c_step is not None:
+                    steps.add(c_step)
+                steps.update(collect_step_numbers(c_body))
+            if data.get('default_body'):
+                steps.update(collect_step_numbers(data.get('default_body', [])))
     return steps
 
 
@@ -44,6 +58,16 @@ def index_action_tree(flow_rows, test_id, source_file):
                 indexed[s_num] = {'line': line, 'type': item_type, 'data': data, 'path': path}
             if item_type == 'loop':
                 _traverse(data.get('body', []), path + (f"loop_{s_num or 'anon'}",))
+            elif item_type == 'if':
+                for b_idx, (b_step, b_cond, b_body) in enumerate(data.get('branches', [])):
+                    _traverse(b_body, path + (f"if_{s_num or 'anon'}_b{b_idx}",))
+                if data.get('else_body'):
+                    _traverse(data.get('else_body', []), path + (f"if_{s_num or 'anon'}_else",))
+            elif item_type == 'switch':
+                for c_idx, (c_step, c_val, c_body) in enumerate(data.get('cases', [])):
+                    _traverse(c_body, path + (f"switch_{s_num or 'anon'}_c{c_idx}",))
+                if data.get('default_body'):
+                    _traverse(data.get('default_body', []), path + (f"switch_{s_num or 'anon'}_default",))
 
     _traverse(flow_rows, ())
     return indexed

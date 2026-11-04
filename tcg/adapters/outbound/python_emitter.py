@@ -5,7 +5,16 @@ from typing import Sequence
 
 from tcg import __version__
 from tcg.core.contracts import OperationContract
-from tcg.core.model import BreakStatement, ExecutableTestCase, Loop, PHASES, Step, VariableRef
+from tcg.core.model import (
+    BreakStatement,
+    ExecutableTestCase,
+    IfBlock,
+    Loop,
+    PHASES,
+    Step,
+    SwitchBlock,
+    VariableRef,
+)
 from tcg.ports.emitter import CodeEmitterPort
 
 
@@ -77,21 +86,55 @@ def _render_statement(stmt, aliases, indent='    '):
         lines.append(f'{indent}for {stmt.variable} in {items_rendered}:')
         body_indent = indent + '    '
         for body_item in stmt.body:
-            if isinstance(body_item, Step):
-                s_lbl = f'{body_item.test_step}. ' if body_item.test_step is not None else ''
-                lines.append(f'{body_indent}# {s_lbl}{body_item.description}')
-                lines.append(f'{body_indent}{_call(body_item, aliases[body_item.contract.function.__module__])}')
-            elif isinstance(body_item, BreakStatement):
-                b_lbl = f'{body_item.step_label}: ' if body_item.step_label is not None else ''
-                if body_item.condition is not None:
-                    lines.append(f'{body_indent}# {b_lbl}BREAK ({body_item.condition.render()})')
-                    lines.append(f'{body_indent}if {body_item.condition.render()}:')
-                    lines.append(f'{body_indent}    break')
-                else:
-                    lines.append(f'{body_indent}# {b_lbl}BREAK')
-                    lines.append(f'{body_indent}break')
-            elif isinstance(body_item, Loop):
-                lines.extend(_render_statement(body_item, aliases, indent=body_indent))
+            lines.extend(_render_statement(body_item, aliases, indent=body_indent))
+    elif isinstance(stmt, BreakStatement):
+        b_lbl = f'{stmt.step_label}: ' if stmt.step_label is not None else ''
+        if stmt.condition is not None:
+            lines.append(f'{indent}# {b_lbl}BREAK ({stmt.condition.render()})')
+            lines.append(f'{indent}if {stmt.condition.render()}:')
+            lines.append(f'{indent}    break')
+        else:
+            lines.append(f'{indent}# {b_lbl}BREAK')
+            lines.append(f'{indent}break')
+    elif isinstance(stmt, IfBlock):
+        for idx, branch in enumerate(stmt.branches):
+            b_lbl = f'{branch.step_label}: ' if branch.step_label is not None else ''
+            kw = 'if' if idx == 0 else 'elif'
+            lines.append(f'{indent}# {b_lbl}{kw.upper()} ({branch.condition.render()})')
+            lines.append(f'{indent}{kw} {branch.condition.render()}:')
+            b_indent = indent + '    '
+            if not branch.body:
+                lines.append(f'{b_indent}pass')
+            else:
+                for item in branch.body:
+                    lines.extend(_render_statement(item, aliases, indent=b_indent))
+        if stmt.else_body:
+            lines.append(f'{indent}# ELSE')
+            lines.append(f'{indent}else:')
+            b_indent = indent + '    '
+            for item in stmt.else_body:
+                lines.extend(_render_statement(item, aliases, indent=b_indent))
+    elif isinstance(stmt, SwitchBlock):
+        step_lbl = f'{stmt.step_label}: ' if stmt.step_label is not None else ''
+        lines.append(f'{indent}# {step_lbl}SWITCH ({stmt.expression})')
+        lines.append(f'{indent}match {stmt.expression}:')
+        case_indent = indent + '    '
+        body_indent = indent + '        '
+        for case in stmt.cases:
+            c_lbl = f'{case.step_label}: ' if case.step_label is not None else ''
+            val_rendered = repr(case.value) if isinstance(case.value, str) else str(case.value)
+            lines.append(f'{case_indent}# {c_lbl}CASE ({val_rendered})')
+            lines.append(f'{case_indent}case {val_rendered}:')
+            if not case.body:
+                lines.append(f'{body_indent}pass')
+            else:
+                for item in case.body:
+                    lines.extend(_render_statement(item, aliases, indent=body_indent))
+        if stmt.default_body:
+            lines.append(f'{case_indent}# DEFAULT')
+            lines.append(f'{case_indent}case _:')
+            for item in stmt.default_body:
+                lines.extend(_render_statement(item, aliases, indent=body_indent))
     return lines
 
 
@@ -112,24 +155,63 @@ def _render_cleanup_statement(stmt, aliases, indent='        '):
         lines.append(f'{indent}    for {stmt.variable} in {items_rendered}:')
         body_indent = indent + '        '
         for body_item in stmt.body:
-            if isinstance(body_item, Step):
-                s_lbl = f'{body_item.test_step}. ' if body_item.test_step is not None else ''
-                lines.append(f'{body_indent}# {s_lbl}{body_item.description}')
-                lines.append(f'{body_indent}try:')
-                lines.append(f'{body_indent}    {_call(body_item, aliases[body_item.contract.function.__module__])}')
-                lines.append(f'{body_indent}except Exception as _cln_err:')
-                lines.append(f'{body_indent}    cleanup_errors.append(_cln_err)')
-            elif isinstance(body_item, BreakStatement):
-                b_lbl = f'{body_item.step_label}: ' if body_item.step_label is not None else ''
-                if body_item.condition is not None:
-                    lines.append(f'{body_indent}# {b_lbl}BREAK ({body_item.condition.render()})')
-                    lines.append(f'{body_indent}if {body_item.condition.render()}:')
-                    lines.append(f'{body_indent}    break')
-                else:
-                    lines.append(f'{body_indent}# {b_lbl}BREAK')
-                    lines.append(f'{body_indent}break')
-            elif isinstance(body_item, Loop):
-                lines.extend(_render_cleanup_statement(body_item, aliases, indent=body_indent))
+            lines.extend(_render_cleanup_statement(body_item, aliases, indent=body_indent))
+        lines.append(f'{indent}except Exception as _cln_err:')
+        lines.append(f'{indent}    cleanup_errors.append(_cln_err)')
+    elif isinstance(stmt, BreakStatement):
+        b_lbl = f'{stmt.step_label}: ' if stmt.step_label is not None else ''
+        if stmt.condition is not None:
+            lines.append(f'{indent}# {b_lbl}BREAK ({stmt.condition.render()})')
+            lines.append(f'{indent}if {stmt.condition.render()}:')
+            lines.append(f'{indent}    break')
+        else:
+            lines.append(f'{indent}# {b_lbl}BREAK')
+            lines.append(f'{indent}break')
+    elif isinstance(stmt, IfBlock):
+        lines.append(f'{indent}try:')
+        sub_indent = indent + '    '
+        for idx, branch in enumerate(stmt.branches):
+            b_lbl = f'{branch.step_label}: ' if branch.step_label is not None else ''
+            kw = 'if' if idx == 0 else 'elif'
+            lines.append(f'{sub_indent}# {b_lbl}{kw.upper()} ({branch.condition.render()})')
+            lines.append(f'{sub_indent}{kw} {branch.condition.render()}:')
+            b_indent = sub_indent + '    '
+            if not branch.body:
+                lines.append(f'{b_indent}pass')
+            else:
+                for item in branch.body:
+                    lines.extend(_render_cleanup_statement(item, aliases, indent=b_indent))
+        if stmt.else_body:
+            lines.append(f'{sub_indent}# ELSE')
+            lines.append(f'{sub_indent}else:')
+            b_indent = sub_indent + '    '
+            for item in stmt.else_body:
+                lines.extend(_render_cleanup_statement(item, aliases, indent=b_indent))
+        lines.append(f'{indent}except Exception as _cln_err:')
+        lines.append(f'{indent}    cleanup_errors.append(_cln_err)')
+    elif isinstance(stmt, SwitchBlock):
+        lines.append(f'{indent}try:')
+        sub_indent = indent + '    '
+        step_lbl = f'{stmt.step_label}: ' if stmt.step_label is not None else ''
+        lines.append(f'{sub_indent}# {step_lbl}SWITCH ({stmt.expression})')
+        lines.append(f'{sub_indent}match {stmt.expression}:')
+        case_indent = sub_indent + '    '
+        body_indent = sub_indent + '        '
+        for case in stmt.cases:
+            c_lbl = f'{case.step_label}: ' if case.step_label is not None else ''
+            val_rendered = repr(case.value) if isinstance(case.value, str) else str(case.value)
+            lines.append(f'{case_indent}# {c_lbl}CASE ({val_rendered})')
+            lines.append(f'{case_indent}case {val_rendered}:')
+            if not case.body:
+                lines.append(f'{body_indent}pass')
+            else:
+                for item in case.body:
+                    lines.extend(_render_cleanup_statement(item, aliases, indent=body_indent))
+        if stmt.default_body:
+            lines.append(f'{case_indent}# DEFAULT')
+            lines.append(f'{case_indent}case _:')
+            for item in stmt.default_body:
+                lines.extend(_render_cleanup_statement(item, aliases, indent=body_indent))
         lines.append(f'{indent}except Exception as _cln_err:')
         lines.append(f'{indent}    cleanup_errors.append(_cln_err)')
     return lines
@@ -193,6 +275,15 @@ def _collect_case_variable_names(cases):
             if isinstance(item, Loop):
                 vars_found.add(item.variable)
                 _visit(item.body)
+            elif isinstance(item, IfBlock):
+                for branch in item.branches:
+                    _visit(branch.body)
+                _visit(item.else_body)
+            elif isinstance(item, SwitchBlock):
+                vars_found.add(item.expression)
+                for c in item.cases:
+                    _visit(c.body)
+                _visit(item.default_body)
     for case in cases:
         _visit(case.steps)
     return vars_found

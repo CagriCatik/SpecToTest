@@ -142,7 +142,7 @@ def log_code_emitted(logger: logging.Logger, case_id: str, output_path: Path, lo
 
 def log_compiled_case(logger: logging.Logger, case: Any, output_path: Path, source: str) -> None:
     """Logs full case translation trace and generated python metrics."""
-    from tcg.core.model import BreakStatement, Loop, Step
+    from tcg.core.model import BreakStatement, IfBlock, Loop, Step, SwitchBlock
 
     log_case_header(logger, case.id, case.name, case.objective)
 
@@ -165,6 +165,23 @@ def log_compiled_case(logger: logging.Logger, case: Any, output_path: Path, sour
             elif isinstance(item, Loop):
                 log_loop_header(logger, item.variable, item.items)
                 _walk(item.body)
+            elif isinstance(item, IfBlock):
+                for idx, branch in enumerate(item.branches):
+                    keyword = "IF" if idx == 0 else "ELSE IF"
+                    cond_str = branch.condition.render()
+                    logger.info("    ║  [%-15s] | (%s)", keyword, cond_str)
+                    _walk(branch.body)
+                if item.else_body:
+                    logger.info("    ║  [ELSE]           |")
+                    _walk(item.else_body)
+            elif isinstance(item, SwitchBlock):
+                logger.info("    ║  [SWITCH]         | Variable: '%s'", item.expression)
+                for case_item in item.cases:
+                    logger.info("    ║  [CASE]           | Wert: %r", case_item.value)
+                    _walk(case_item.body)
+                if item.default_body:
+                    logger.info("    ║  [DEFAULT]        |")
+                    _walk(item.default_body)
             elif isinstance(item, BreakStatement):
                 cond = item.condition.render() if item.condition else "True"
                 logger.info("    ║  Z.%-3s [BREAK]       | if %s: break", item.source.row, cond)

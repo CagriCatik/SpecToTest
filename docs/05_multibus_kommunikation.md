@@ -221,3 +221,4 @@ NAME: Gateway-Routing von LIN Türkontakt auf CAN und SOME/IP Status
 50. LIN-Signal DoorContactStatus auf Geschlossen setzen
 60. CAN-Signal BMSState auf Standby setzen
 ```
+

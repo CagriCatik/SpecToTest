@@ -170,3 +170,4 @@ sequenceDiagram
 
 ### Transaktionale Sicherheit
 Ein Profilwechsel wird **nur dann** vollzogen, wenn die Zielkonfiguration vollständig fehlerfrei geladen werden kann. Ist beispielsweise eine CAN-Signaldatenbank beschädigt, wird der Wechsel abgebrochen und der aktuelle Arbeitsstand bleibt unberührt.
+

@@ -205,3 +205,4 @@ Im Report siehst du:
 | `SpecError: operation '...' is not permitted in section '...'` | Phasenschutz-Verletzung (z. B. Assertion im `Action`-Abschnitt). | Verschiebe Prüfungen nach `Expected Result` oder passe die Phasenberechtigung im `OperationContract` an. |
 | `SpecError: expected result references non-existent step 'X'` | Die Schrittnummer in `Expected Result` existiert nicht in `Action`. | Nummerierung in `Action` und `Expected Result` aufeinander abstimmen. |
 | `SpecError: Zustand '...' ist für Signal '...' nicht gültig` | Der Enum-Zustand gehört zu einem anderen Signal oder existiert nicht in der DBC. | Erlaubte Enums in der Kommunikationsansicht der GUI oder in der DBC prüfen. |
+

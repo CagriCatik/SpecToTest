@@ -1,12 +1,13 @@
 {
   "version": "1.0",
-  "generated_at": "2026-11-04T18:00:58.549910+00:00",
+  "generated_at": "2026-11-04T19:29:56.315360+00:00",
   "files": [
     "bms/test_tc_08_bms_hv_precharge_sequence.py",
     "bms/test_tc_09_bms_cell_overvoltage_derating.py",
     "bms/test_tc_10_bms_thermal_derating_sweep.py",
     "bms/test_tc_11_bms_isolation_monitoring.py",
     "bms/test_tc_12_bms_signal_tolerances_and_ranges.py",
+    "bms/test_tc_14_control_flow_branching.py",
     "can/test_tc_06_can_signal_transmission.py",
     "diagnostics/test_tc_01_undervoltage_recovery.py",
     "diagnostics/test_tc_03_diagnostic_powercycle.py",
@@ -45,6 +46,12 @@
       "spec": "inputs/bms/tc_12_bms_signal_tolerances_and_ranges.md",
       "test_ids": [
         "TC_12_BMS_SIGNAL_TOLERANCES_AND_RANGES"
+      ]
+    },
+    "bms/test_tc_14_control_flow_branching.py": {
+      "spec": "inputs/bms/tc_14_control_flow_branching.md",
+      "test_ids": [
+        "TC_14_CONTROL_FLOW_BRANCHING"
       ]
     },
     "can/test_tc_06_can_signal_transmission.py": {

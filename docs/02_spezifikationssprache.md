@@ -109,9 +109,9 @@ flowchart TD
 
 ## 5. Kontrollstrukturen & Scoping
 
-SpecToTest stellt strukturierte Schleifen und bedingte Schleifenabbrüche bereit, ohne dass der Parser Programmiersprachen-Boilerplate benötigt:
+SpecToTest stellt strukturierte Schleifen, Bedingungen und Fallunterscheidungen bereit, ohne dass der Tester Programmiersprachen-Boilerplate benötigt:
 
-### Syntax von `FOR`-Schleifen
+### A. Schleifen (`FOR` / `END FOR`) und `BREAK`
 ```text
 FOR (<variable>; [<wert1>, <wert2>, <wert3>, ...])
     <anweisung1>
@@ -119,21 +119,7 @@ FOR (<variable>; [<wert1>, <wert2>, <wert3>, ...])
 END FOR
 ```
 
-Mit optionaler Schrittnummerierung:
-```text
-10. FOR (U; [9.0V, 10.5V, 12.0V, 13.8V])
-    20. Batteriespannung = U
-    30. Warte 200 ms
-END FOR
-```
-
-### Syntax von `BREAK`
-Ein bedingter Abbruch beendet die Schleife vorzeitig, wenn eine Bedingung wahr ist:
-```text
-BREAK (<bedingung>)
-```
-
-Beispiel:
+Mit optionaler Schrittnummerierung und `BREAK`:
 ```text
 10. FOR (i; [1, 2, 3, 4, 5])
     20. Warte i s
@@ -141,11 +127,79 @@ Beispiel:
 END FOR
 ```
 
-### Scoping- und Lebenszyklusregeln
-1. **Gültigkeitsbereich:** Die Schleifenvariable (z. B. `U` oder `i`) existiert ausschließlich innerhalb des Schleifenblocks zwischen `FOR` und `END FOR`.
-2. **Schutz vor Überstrahlung:** Nach `END FOR` oder in unnummerierten Erwartungen führt der Zugriff auf eine Schleifenvariable zu einem `SpecError: variable '<var>' is undefined; in scope: [...]`.
-3. **Unveränderlichkeit:** Innerhalb der Schleifeniteration ist die Schleifenvariable schreibgeschützt.
-4. **Verschachtelung:** Schleifen können beliebig tief ineinander verschachtelt werden; innere Schleifen haben Zugriff auf die Variablen äußerer Schleifen.
+`BREAK` kann ohne Bedingung (`BREAK`) oder mit Bedingung (`BREAK (<bedingung>)`) aufgerufen werden. `BREAK` darf überall innerhalb einer `FOR`-Schleife platziert werden, auch tief verschachtelt innerhalb von `IF`- oder `SWITCH`-Blöcken.
+
+### B. Bedingte Verzweigungen (`IF` / `ELSE IF` / `ELSE` / `END IF`)
+Verzweigungen ermöglichen die bedingte Ausführung von Testschritten basierend auf Schleifenvariablen:
+```text
+IF (<bedingung>)
+    <anweisungen>
+ELSE IF (<bedingung>)
+    <anweisungen>
+ELSE
+    <anweisungen>
+END IF
+```
+
+Beispiel:
+```text
+10: FOR (temp; [25, 45, 65])
+    20: IF (temp < 30)
+        21. CAN-Signal CoolingRequest auf 0 setzen
+    22: ELSE IF (temp == 45)
+        23. CAN-Signal CoolingRequest auf 1 setzen
+    24: ELSE
+        25. CAN-Signal CoolingRequest auf 2 setzen
+    26: END IF
+27: END FOR
+```
+
+**Vergleichsoperatoren in Bedingungen:**
+- `==` (Gleichheit), `!=` (Ungleichheit)
+- `<`, `<=` (Kleiner / Kleiner-Gleich)
+- `>`, `>=` (Größer / Größer-Gleich)
+- Werte können Zahlen (`45`), Gleitkommazahlen/Spannungen (`13.5`), Strings (`"DriveReady"`) oder Booleans (`True`/`False`) sein.
+
+### C. Mehrfachauswahl (`SWITCH` / `CASE` / `DEFAULT` / `END SWITCH`)
+Für mehrstufige Fallunterscheidungen steht das `SWITCH`-Konstrukt zur Verfügung, das deterministisch in moderne Python-`match ... case:`-Strukturen übersetzt wird:
+```text
+SWITCH (<variable>)
+    CASE (<wert1>)
+        <anweisungen>
+    CASE (<wert2>)
+        <anweisungen>
+    DEFAULT
+        <anweisungen>
+END SWITCH
+```
+
+Beispiel:
+```text
+10: FOR (mode; [1, 2, 3])
+    20: SWITCH (mode)
+        21: CASE (1)
+            22. CAN-Signal BMSState auf 1 setzen
+            23. CAN-Signal CoolingRequest auf 0 setzen
+        24: CASE (2)
+            25. CAN-Signal BMSState auf 2 setzen
+            26. CAN-Signal CoolingRequest auf 1 setzen
+        27: DEFAULT
+            28. CAN-Signal BMSState auf 3 setzen
+            29. CAN-Signal CoolingRequest auf 2 setzen
+    30: END SWITCH
+31: END FOR
+```
+
+### D. Scoping- und Lebenszyklusregeln
+1. **Gültigkeitsbereich:** Schleifenvariablen (z. B. `temp` oder `mode`) existieren ausschließlich innerhalb des jeweiligen Blocks zwischen `FOR` und `END FOR`.
+2. **Schutz vor Überstrahlung:** Nach `END FOR` oder in unnummerierten Erwartungen führt der Zugriff auf eine Schleifenvariable zu einem `SpecError: variable '<var>' in IF condition is undefined; in scope: [...]`.
+3. **Strenge Block-Integrität:**
+   - Ein `CASE` oder `DEFAULT` ist nur innerhalb von `SWITCH` erlaubt.
+   - `CASE` nach `DEFAULT` wird vom Compiler strikt abgelehnt.
+   - Befehle direkt in `SWITCH` außerhalb von `CASE` oder `DEFAULT` führen zu einem Syntaxfehler.
+   - Ein `ELSE` oder `ELSE IF` ist nur innerhalb von `IF` erlaubt; `ELSE IF` nach `ELSE` ist unzulässig.
+   - Unvollständig geschlossene Blöcke (z. B. fehlendes `END IF` vor `END FOR` oder vor dem nächsten Abschnitt) werden mit präziser Zeilenangabe beanstandet.
+4. **Verschachtelung:** `FOR`, `IF` und `SWITCH` können beliebig tief ineinander geschachtelt werden. Innerhalb geschachtelter Blöcke bleiben die Variablen aller übergeordneten Schleifen sichtbar.
 
 ---
 
@@ -183,3 +237,4 @@ stateDiagram-v2
 
 ### Deterministisches Cleanup (`try ... finally`)
 Unabhängig davon, an welcher Stelle im Ablauf ein Fehler auftritt (Syntaxfehler in Stimuli, Verbindungsabbruch zum Prüfstand oder fehlgeschlagene Erwartung), wird der Abschnitt `Postcondition` immer garantiert durchlaufen. Dadurch bleiben keine Relais angezogen, Zündungen aktiv oder gefährliche Spannungen am Prüfling anliegen.
+

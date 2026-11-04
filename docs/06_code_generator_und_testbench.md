@@ -199,3 +199,4 @@ Ergebnis: 13 bestanden, 0 fehlgeschlagen (Gesamtdauer: 0.05 s)
 ### 4. JUnit-XML (`junit.xml`)
 - Vollständig konform zum JUnit-Schema.
 - Wird von GitHub Actions, GitLab CI, Jenkins und Azure DevOps direkt eingelesen, um Test-Trends und Regressions-Diagramme darzustellen.
+

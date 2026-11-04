@@ -11,11 +11,15 @@ from .mapping import resolve, single_line_text
 from .parameters import convert_argument
 from .model import (
     BreakStatement,
+    IfBlock,
+    IfBranch,
     Loop,
     PHASES,
     SourceRef,
     SpecError,
     Step,
+    SwitchBlock,
+    SwitchCase,
     TestCase,
     VariableRef,
 )
@@ -149,18 +153,10 @@ def _compile_command(execution_id, requested_phase, test_step, text, line, secti
                 mapping.id, source, text)
 
 
-def _compile_loop(data, line, section, phase, source_file, mappings, profile, used_ids,
-                  parent_scope=(), parent_raw_vars=None, parent_conv_vars=None):
-    var = data['variable']
-    check_loop_variable(var, line, section, source_file, parent_scope)
-    scope = set(parent_scope) | {var}
-    raw_vars = dict(parent_raw_vars or {})
-    raw_vars[var] = list(data['items'])
-    conv_vars = parent_conv_vars if parent_conv_vars is not None else {}
-    body_conv_vars = dict(conv_vars)
-    source = SourceRef(source_file, section, line)
+def _compile_loop_body(body_items, section, phase, source_file, mappings, profile, used_ids,
+                       scope, raw_vars, conv_vars):
     body_steps = []
-    for body_line, body_item in data['body']:
+    for body_line, body_item in body_items:
         item_type = body_item.get('type', 'command')
         step_label = body_item.get('Schritt')
         if item_type == 'command':
@@ -168,7 +164,7 @@ def _compile_loop(data, line, section, phase, source_file, mappings, profile, us
             exec_id = _make_id(prefix, used_ids)
             step = _compile_command(exec_id, phase, step_label, body_item['Befehl'], body_line,
                                    section, source_file, mappings, profile, scope=scope,
-                                   raw_loop_vars=raw_vars, converted_loop_vars=body_conv_vars)
+                                   raw_loop_vars=raw_vars, converted_loop_vars=conv_vars)
             body_steps.append(step)
         elif item_type == 'break':
             cond = body_item.get('condition')
@@ -181,8 +177,52 @@ def _compile_loop(data, line, section, phase, source_file, mappings, profile, us
                                              source=SourceRef(source_file, section, body_line)))
         elif item_type == 'loop':
             nested = _compile_loop(body_item, body_line, section, phase, source_file, mappings, profile, used_ids,
-                                   parent_scope=scope, parent_raw_vars=raw_vars, parent_conv_vars=body_conv_vars)
+                                   parent_scope=scope, parent_raw_vars=raw_vars, parent_conv_vars=conv_vars)
             body_steps.append(nested)
+        elif item_type == 'if':
+            branches = []
+            for b_step, cond, b_body in body_item.get('branches', []):
+                if cond.left not in scope:
+                    raise SpecError(f'{source_file}:{body_line} [{section}]: variable {cond.left!r} in IF condition is undefined; in scope: {sorted(scope)}')
+                if isinstance(cond.right, VariableRef) and cond.right.name not in scope:
+                    raise SpecError(f'{source_file}:{body_line} [{section}]: variable {cond.right.name!r} on right-hand side of IF condition is undefined; in scope: {sorted(scope)}')
+                compiled_b = _compile_loop_body(b_body, section, phase, source_file, mappings, profile, used_ids,
+                                                scope, raw_vars, conv_vars)
+                branches.append(IfBranch(condition=cond, body=tuple(compiled_b), step_label=b_step, source=SourceRef(source_file, section, body_line)))
+            else_steps = []
+            if body_item.get('else_body'):
+                else_steps = _compile_loop_body(body_item.get('else_body'), section, phase, source_file, mappings, profile, used_ids,
+                                                scope, raw_vars, conv_vars)
+            body_steps.append(IfBlock(branches=tuple(branches), else_body=tuple(else_steps), step_label=step_label, source=SourceRef(source_file, section, body_line), phase=phase))
+        elif item_type == 'switch':
+            expr = body_item['expression']
+            if expr not in scope:
+                raise SpecError(f'{source_file}:{body_line} [{section}]: variable {expr!r} in SWITCH is undefined; in scope: {sorted(scope)}')
+            cases = []
+            for c_step, c_val, c_body in body_item.get('cases', []):
+                compiled_c = _compile_loop_body(c_body, section, phase, source_file, mappings, profile, used_ids,
+                                                scope, raw_vars, conv_vars)
+                cases.append(SwitchCase(value=c_val, body=tuple(compiled_c), step_label=c_step, source=SourceRef(source_file, section, body_line)))
+            default_steps = []
+            if body_item.get('default_body'):
+                default_steps = _compile_loop_body(body_item.get('default_body'), section, phase, source_file, mappings, profile, used_ids,
+                                                   scope, raw_vars, conv_vars)
+            body_steps.append(SwitchBlock(expression=expr, cases=tuple(cases), default_body=tuple(default_steps), step_label=step_label, source=SourceRef(source_file, section, body_line), phase=phase))
+    return body_steps
+
+
+def _compile_loop(data, line, section, phase, source_file, mappings, profile, used_ids,
+                  parent_scope=(), parent_raw_vars=None, parent_conv_vars=None):
+    var = data['variable']
+    check_loop_variable(var, line, section, source_file, parent_scope)
+    scope = set(parent_scope) | {var}
+    raw_vars = dict(parent_raw_vars or {})
+    raw_vars[var] = list(data['items'])
+    conv_vars = parent_conv_vars if parent_conv_vars is not None else {}
+    body_conv_vars = dict(conv_vars)
+    source = SourceRef(source_file, section, line)
+    body_steps = _compile_loop_body(data['body'], section, phase, source_file, mappings, profile, used_ids,
+                                   scope, raw_vars, body_conv_vars)
     if parent_raw_vars:
         conv_vars.update({k: v for k, v in body_conv_vars.items() if k in parent_raw_vars})
     loop_items = tuple(body_conv_vars.get(var, raw_vars.get(var, data['items'])))
@@ -254,6 +294,63 @@ def _compile_flow_sequence(flow_items, section, phase, source_file, mappings, pr
                     compiled_nodes.append(exp_step)
                 del expected_by_step[step_num]
 
+        elif item_type == 'if':
+            branches = []
+            for b_step, cond, b_body in data.get('branches', []):
+                if cond.left not in parent_scope:
+                    raise SpecError(f'{source_file}:{line} [{section}]: variable {cond.left!r} in IF condition is undefined; in scope: {sorted(parent_scope)}')
+                if isinstance(cond.right, VariableRef) and cond.right.name not in parent_scope:
+                    raise SpecError(f'{source_file}:{line} [{section}]: variable {cond.right.name!r} on right-hand side of IF condition is undefined; in scope: {sorted(parent_scope)}')
+                compiled_b = _compile_flow_sequence(b_body, section, phase, source_file, mappings,
+                                                    profile, used_ids, expected_by_step, parent_scope=parent_scope,
+                                                    parent_raw_vars=raw_vars, parent_conv_vars=conv_vars)
+                branches.append(IfBranch(condition=cond, body=tuple(compiled_b), step_label=b_step, source=SourceRef(source_file, section, line)))
+            else_nodes = []
+            if data.get('else_body'):
+                else_nodes = _compile_flow_sequence(data.get('else_body'), section, phase, source_file, mappings,
+                                                    profile, used_ids, expected_by_step, parent_scope=parent_scope,
+                                                    parent_raw_vars=raw_vars, parent_conv_vars=conv_vars)
+            if_node = IfBlock(branches=tuple(branches), else_body=tuple(else_nodes),
+                              step_label=step_num, source=SourceRef(source_file, section, line), phase=phase)
+            compiled_nodes.append(if_node)
+            if step_num in expected_by_step:
+                for exp_line, exp_data in expected_by_step[step_num]:
+                    exp_exec_id = _make_id(f'S{step_num}.E' if step_num is not None else f'S{len(compiled_nodes)+1}.E', used_ids)
+                    exp_step = _compile_command(exp_exec_id, 'EXPECTED', step_num, exp_data['Befehl'], exp_line,
+                                                'Erwartungen', source_file, mappings, profile, scope=parent_scope,
+                                                raw_loop_vars=raw_vars, converted_loop_vars=conv_vars)
+                    compiled_nodes.append(exp_step)
+                del expected_by_step[step_num]
+
+        elif item_type == 'switch':
+            expr = data['expression']
+            if expr not in parent_scope:
+                raise SpecError(f'{source_file}:{line} [{section}]: variable {expr!r} in SWITCH is undefined; in scope: {sorted(parent_scope)}')
+            cases = []
+            for c_step, c_val, c_body in data.get('cases', []):
+                compiled_c = _compile_flow_sequence(c_body, section, phase, source_file, mappings,
+                                                    profile, used_ids, expected_by_step, parent_scope=parent_scope,
+                                                    parent_raw_vars=raw_vars, parent_conv_vars=conv_vars)
+                cases.append(SwitchCase(value=c_val, body=tuple(compiled_c), step_label=c_step, source=SourceRef(source_file, section, line)))
+            default_nodes = []
+            if data.get('default_body'):
+                default_nodes = _compile_flow_sequence(data.get('default_body'), section, phase, source_file, mappings,
+                                                       profile, used_ids, expected_by_step, parent_scope=parent_scope,
+                                                       parent_raw_vars=raw_vars, parent_conv_vars=conv_vars)
+            switch_node = SwitchBlock(expression=expr, cases=tuple(cases), default_body=tuple(default_nodes),
+                                      step_label=step_num, source=SourceRef(source_file, section, line), phase=phase)
+            compiled_nodes.append(switch_node)
+            if step_num in expected_by_step:
+                for exp_line, exp_data in expected_by_step[step_num]:
+                    exp_exec_id = _make_id(f'S{step_num}.E' if step_num is not None else f'S{len(compiled_nodes)+1}.E', used_ids)
+                    exp_step = _compile_command(exp_exec_id, 'EXPECTED', step_num, exp_data['Befehl'], exp_line,
+                                                'Erwartungen', source_file, mappings, profile, scope=parent_scope,
+                                                raw_loop_vars=raw_vars, converted_loop_vars=conv_vars)
+                    compiled_nodes.append(exp_step)
+                del expected_by_step[step_num]
+
+    return compiled_nodes
+
     return compiled_nodes
 
 
@@ -268,6 +365,8 @@ def _compile_case(metadata, sections, mappings, profile, source_file):
     for line, data in precond_rows:
         if data.get('type') == 'loop':
             steps.append(_compile_loop(data, line, 'Vorbedingungen', 'PRECONDITION', source_file, mappings, profile, used_ids))
+        elif data.get('type') in ('if', 'switch'):
+            steps.extend(_compile_loop_body([(line, data)], 'Vorbedingungen', 'PRECONDITION', source_file, mappings, profile, used_ids, (), {}, {}))
         else:
             step_num = data.get('Schritt') if data.get('Schritt') is not None else data.get('Reihenfolge')
             exec_id = _make_id(f'P{step_num}', used_ids)
@@ -319,6 +418,8 @@ def _compile_case(metadata, sections, mappings, profile, source_file):
     for line, data in cleanup_rows:
         if data.get('type') == 'loop':
             steps.append(_compile_loop(data, line, 'Nachbedingungen', 'CLEANUP', source_file, mappings, profile, used_ids))
+        elif data.get('type') in ('if', 'switch'):
+            steps.extend(_compile_loop_body([(line, data)], 'Nachbedingungen', 'CLEANUP', source_file, mappings, profile, used_ids, (), {}, {}))
         else:
             step_num = data.get('Schritt') if data.get('Schritt') is not None else data.get('Reihenfolge')
             exec_id = _make_id(f'C{step_num}', used_ids)

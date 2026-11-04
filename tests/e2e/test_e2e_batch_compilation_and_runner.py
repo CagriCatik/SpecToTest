@@ -23,7 +23,7 @@ class BatchCompilationAndRunnerE2ETests(BaseTestCase):
         with tempfile.TemporaryDirectory() as directory:
             out_dir = Path(directory) / 'generated'
             cases = generate_batch(ROOT / 'inputs', [MAPPING], RESOURCES, out_dir, REGISTRY, RUNNER)
-            self.assertEqual(len(cases), 13)
+            self.assertEqual(len(cases), 14)
 
             # Check that category folders were created
             expected_categories = {'bms', 'can', 'diagnostics', 'hil', 'hmi', 'limits'}
@@ -32,7 +32,7 @@ class BatchCompilationAndRunnerE2ETests(BaseTestCase):
 
             # Check test discovery
             discovered = discover_test_modules(out_dir)
-            self.assertEqual(len(discovered), 13)
+            self.assertEqual(len(discovered), 14)
 
             # Run E2E and generate HTML report
             logs = []
@@ -44,7 +44,7 @@ class BatchCompilationAndRunnerE2ETests(BaseTestCase):
                     log.category = category
                     logs.append(log)
 
-            self.assertEqual(len(logs), 13)
+            self.assertEqual(len(logs), 14)
             self.assertTrue(all(l.result == 'PASS' for l in logs))
 
             html_out = Path(directory) / 'report.html'

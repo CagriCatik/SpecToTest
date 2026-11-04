@@ -175,3 +175,4 @@ Jedes generierte Python-Testskript enthält im Modul-Docstring den exakten Wortl
 
 ### 4. Technologieneutrale Multi-Bus-Unterstützung
 CAN, LIN und Automotive Ethernet (SOME/IP) werden über ein einheitliches Abstraktionsmodell in `tcg/comm/` verwaltet. Weder der Compiler noch die Spezifikationssprache sind an eine bestimmte Bus-Hardware gebunden.
+

@@ -57,3 +57,4 @@ flowchart LR
 - **ResourceProfile:** Liste aller in einer Projektumgebung zulässigen Ressourcen-Identifikatoren (Steuergeräte, CAN-Signale, Diagnoseschlüssel).
 - **CommunicationCatalog:** Technologie-unabhängiger Katalog aller geladenen Kommunikationsressourcen (CAN, LIN, Ethernet SOME/IP).
 - **BenchPort:** Schnittstellenprotokoll (`Protocol`), das die physische oder simulierte Prüfumgebung für generierte Tests abstrahiert.
+

@@ -114,16 +114,18 @@ LIN_SIGNAL_RAW = SignalValue(BASE_CAN_SIGNAL_VALUE, technology=Technology.LIN,
 EVENT_COUNT = DecimalType(Decimal('0'), Decimal('1000'))
 
 
-def build_operations_registry(catalog=None):
+def build_operations_registry(catalog=None, can_catalog=None):
     """Return a registry bound to one project's communication catalog.
 
     `catalog` holds every network and technology the project configures; pass None
     for a project that uses no bus descriptions at all.
+    `can_catalog` is accepted as an alias for backwards compatibility and single-bus projects.
 
     The returned registry is a fresh, independent copy: REGISTRY and registries built
     for other projects are untouched.
     """
-    return bind_registry(REGISTRY, {COMM_CATALOG_KEY: catalog or EMPTY_CATALOG})
+    effective_catalog = catalog if catalog is not None else can_catalog
+    return bind_registry(REGISTRY, {COMM_CATALOG_KEY: effective_catalog or EMPTY_CATALOG})
 
 
 VEHICLE_SPEED_VALUE = Quantity(
