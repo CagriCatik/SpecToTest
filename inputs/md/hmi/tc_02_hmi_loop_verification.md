@@ -1,0 +1,22 @@
+# TESTFALL: TC_02_HMI_LOOP_VERIFICATION
+**NAME:** Tc 02 Hmi Loop Verification
+
+## Precondition
+10. Bildschirm HOME auswählen
+20. Parameter GAIN auf 0 schreiben
+
+## Action
+30. Bildschirm SETTINGS auswählen
+40. Parameter GAIN auf 42 schreiben
+50: FOR (step;[10, 20, 30])
+51:   Warte 100 ms
+52:   BREAK (step==20)
+53: END FOR
+
+## Expected Result
+30. Anzeige zeigt "Settings"
+40. Parameter GAIN ist 42
+
+## Postcondition
+60. Parameter GAIN auf 0 schreiben
+70. Bildschirm HOME auswählen

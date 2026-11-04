@@ -27,15 +27,16 @@ def run_tc_05_diagnostic_timing_undervoltage(bench):
     120. Zündung aus
     ========================================================================
     """
-    # --- Precondition ---
-    # 10. Zündung an
-    ignition.set_ignition(bench, state=True)
-    # 20. Versorgung auf 13.5 V setzen
-    supply.set_supply(bench, value=Decimal('13.5'))
-    # 30. Fehlerspeicher BCM löschen
-    diagnostic.clear_fault_memory(bench, ecu='BCM')
-
+    cleanup_errors = []
     try:
+        # --- Precondition ---
+        # 10. Zündung an
+        ignition.set_ignition(bench, state=True)
+        # 20. Versorgung auf 13.5 V setzen
+        supply.set_supply(bench, value=Decimal('13.5'))
+        # 30. Fehlerspeicher BCM löschen
+        diagnostic.clear_fault_memory(bench, ecu='BCM')
+
         # --- Action & Expected Result ---
         # 40. Versorgung auf 7000 mV setzen
         supply.set_supply(bench, value=Decimal('7'))
@@ -52,11 +53,24 @@ def run_tc_05_diagnostic_timing_undervoltage(bench):
     finally:
         # --- Postcondition (Cleanup) ---
         # 100. Versorgung auf 13.5 V setzen
-        supply.set_supply(bench, value=Decimal('13.5'))
+        try:
+            supply.set_supply(bench, value=Decimal('13.5'))
+        except Exception as _cln_err:
+            cleanup_errors.append(_cln_err)
         # 110. Fehlerspeicher BCM löschen
-        diagnostic.clear_fault_memory(bench, ecu='BCM')
+        try:
+            diagnostic.clear_fault_memory(bench, ecu='BCM')
+        except Exception as _cln_err:
+            cleanup_errors.append(_cln_err)
         # 120. Zündung aus
-        ignition.set_ignition(bench, state=False)
+        try:
+            ignition.set_ignition(bench, state=False)
+        except Exception as _cln_err:
+            cleanup_errors.append(_cln_err)
+        if cleanup_errors:
+            if len(cleanup_errors) == 1:
+                raise cleanup_errors[0]
+            raise ExceptionGroup("Multiple errors during cleanup", cleanup_errors)
     return TestResult('TC_05_DIAGNOSTIC_TIMING_UNDERVOLTAGE', "PASS")
 
 RUNNERS = {

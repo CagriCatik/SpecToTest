@@ -1,0 +1,18 @@
+Precondition
+10. Zündung an
+20. Versorgung auf 13.5 V setzen
+30. Fehlerspeicher BCM löschen
+
+Action
+40. Versorgung auf 7000 mV setzen
+50. Fehler UNDERVOLTAGE in BCM ist inaktiv
+60. Auf Fehler UNDERVOLTAGE in BCM aktiv warten, maximal 1 s, Prüfintervall 100 ms
+70. Fehler UNDERVOLTAGE in BCM bleibt 300 ms aktiv, Prüfintervall 100 ms
+80. Versorgung auf 13.5 V setzen
+90. Fehler UNDERVOLTAGE in BCM ist inaktiv
+
+Postcondition
+100. Versorgung auf 13.5 V setzen
+110. Fehlerspeicher BCM löschen
+120. Zündung aus
+

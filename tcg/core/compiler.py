@@ -1,6 +1,12 @@
 """Neutral parsed specification -> validated test-case models."""
 import re
 
+from .expectations import (
+    check_loop_variable,
+    collect_step_numbers,
+    index_action_tree,
+    validate_expectations,
+)
 from .mapping import resolve, single_line_text
 from .model import (
     BreakStatement,
@@ -103,6 +109,7 @@ def _compile_command(execution_id, requested_phase, test_step, text, line, secti
 
 def _compile_loop(data, line, section, phase, source_file, mappings, profile, used_ids, parent_scope=()):
     var = data['variable']
+    check_loop_variable(var, line, section, source_file, parent_scope)
     scope = set(parent_scope) | {var}
     source = SourceRef(source_file, section, line)
     body_steps = []
@@ -128,6 +135,58 @@ def _compile_loop(data, line, section, phase, source_file, mappings, profile, us
                 step_label=data.get('Schritt'), source=source, phase=phase)
 
 
+def _compile_flow_sequence(flow_items, section, phase, source_file, mappings, profile, used_ids,
+                           expected_by_step, parent_scope=()):
+    compiled_nodes = []
+    for line, data in flow_items:
+        item_type = data.get('type', 'command')
+        step_num = data.get('Schritt')
+        if item_type == 'command':
+            if step_num in expected_by_step:
+                exec_id = _make_id(f'S{step_num}.A' if step_num is not None else f'S{len(compiled_nodes)+1}.A', used_ids)
+                action_step = _compile_command(exec_id, 'ACTION', step_num, data['Befehl'], line,
+                                               section, source_file, mappings, profile, scope=parent_scope)
+                compiled_nodes.append(action_step)
+                for exp_line, exp_data in expected_by_step[step_num]:
+                    exp_exec_id = _make_id(f'S{step_num}.E' if step_num is not None else f'S{len(compiled_nodes)+1}.E', used_ids)
+                    exp_step = _compile_command(exp_exec_id, 'EXPECTED', step_num, exp_data['Befehl'], exp_line,
+                                                'Erwartungen', source_file, mappings, profile, scope=parent_scope)
+                    compiled_nodes.append(exp_step)
+                del expected_by_step[step_num]
+            else:
+                exec_id = _make_id(f'S{step_num}' if step_num is not None else f'S{len(compiled_nodes)+1}', used_ids)
+                action_step = _compile_command(exec_id, None, step_num, data['Befehl'], line,
+                                               section, source_file, mappings, profile, scope=parent_scope)
+                compiled_nodes.append(action_step)
+
+        elif item_type == 'break':
+            cond = data.get('condition')
+            if cond is not None and cond.left not in parent_scope:
+                raise SpecError(f'{source_file}:{line} [{section}]: variable {cond.left!r} in BREAK condition is undefined; in scope: {sorted(parent_scope)}')
+            compiled_nodes.append(BreakStatement(condition=cond, step_label=step_num,
+                                                 source=SourceRef(source_file, section, line)))
+
+        elif item_type == 'loop':
+            var = data['variable']
+            check_loop_variable(var, line, section, source_file, parent_scope)
+            loop_scope = set(parent_scope) | {var}
+            source = SourceRef(source_file, section, line)
+            body_nodes = _compile_flow_sequence(data['body'], section, phase, source_file, mappings,
+                                                profile, used_ids, expected_by_step, parent_scope=loop_scope)
+            loop_node = Loop(variable=var, items=tuple(data['items']), body=tuple(body_nodes),
+                             step_label=step_num, source=source, phase=phase)
+            compiled_nodes.append(loop_node)
+            if step_num in expected_by_step:
+                for exp_line, exp_data in expected_by_step[step_num]:
+                    exp_exec_id = _make_id(f'S{step_num}.E' if step_num is not None else f'S{len(compiled_nodes)+1}.E', used_ids)
+                    exp_step = _compile_command(exp_exec_id, 'EXPECTED', step_num, exp_data['Befehl'], exp_line,
+                                                'Erwartungen', source_file, mappings, profile, scope=parent_scope)
+                    compiled_nodes.append(exp_step)
+                del expected_by_step[step_num]
+
+    return compiled_nodes
+
+
 def _compile_case(metadata, sections, mappings, profile, source_file):
     test_id = metadata['id']
     used_ids = set()
@@ -135,6 +194,7 @@ def _compile_case(metadata, sections, mappings, profile, source_file):
 
     # 1. Preconditions
     precond_rows = [row for row in sections['Vorbedingungen'] if row[1]['Test_ID'] == test_id]
+    precond_steps = collect_step_numbers(precond_rows)
     for line, data in precond_rows:
         if data.get('type') == 'loop':
             steps.append(_compile_loop(data, line, 'Vorbedingungen', 'PRECONDITION', source_file, mappings, profile, used_ids))
@@ -149,7 +209,14 @@ def _compile_case(metadata, sections, mappings, profile, source_file):
     if not flow_rows:
         raise SpecError(f'{test_id}: at least one numbered command in ABLAUF is required')
 
+    action_index = index_action_tree(flow_rows, test_id, source_file)
+
+    cleanup_rows = [row for row in sections['Nachbedingungen'] if row[1]['Test_ID'] == test_id]
+    cleanup_steps = collect_step_numbers(cleanup_rows)
+
     expected_rows = [row for row in sections.get('Erwartungen', []) if row[1]['Test_ID'] == test_id]
+    validate_expectations(expected_rows, action_index, precond_steps, cleanup_steps, test_id, source_file)
+
     expected_by_step = {}
     unassociated_expected = []
     for exp_line, exp_data in expected_rows:
@@ -159,44 +226,17 @@ def _compile_case(metadata, sections, mappings, profile, source_file):
         else:
             unassociated_expected.append((exp_line, exp_data))
 
-    for line, data in flow_rows:
-        if data.get('type') == 'loop':
-            steps.append(_compile_loop(data, line, 'Ablauf', 'ACTION', source_file, mappings, profile, used_ids))
-            continue
-        step_num = data.get('Schritt')
-        if step_num in expected_by_step:
-            exec_id = _make_id(f'S{step_num}.A' if step_num is not None else f'S{len(steps)+1}.A', used_ids)
-            step = _compile_command(exec_id, 'ACTION', step_num, data['Befehl'], line,
-                                    'Ablauf', source_file, mappings, profile)
-            steps.append(step)
-            for exp_line, exp_data in expected_by_step[step_num]:
-                exp_exec_id = _make_id(f'S{step_num}.E' if step_num is not None else f'S{len(steps)+1}.E', used_ids)
-                exp_step = _compile_command(exp_exec_id, 'EXPECTED', step_num, exp_data['Befehl'], exp_line,
-                                            'Erwartungen', source_file, mappings, profile)
-                steps.append(exp_step)
-            del expected_by_step[step_num]
-        else:
-            exec_id = _make_id(f'S{step_num}' if step_num is not None else f'S{len(steps)+1}', used_ids)
-            step = _compile_command(exec_id, None, step_num, data['Befehl'], line,
-                                    'Ablauf', source_file, mappings, profile)
-            steps.append(step)
-
-    for remaining_list in expected_by_step.values():
-        for exp_line, exp_data in remaining_list:
-            s_num = exp_data.get('Schritt')
-            exp_exec_id = _make_id(f'S{s_num}.E' if s_num is not None else f'S{len(steps)+1}.E', used_ids)
-            exp_step = _compile_command(exp_exec_id, 'EXPECTED', s_num, exp_data['Befehl'], exp_line,
-                                        'Erwartungen', source_file, mappings, profile)
-            steps.append(exp_step)
+    action_and_exp_nodes = _compile_flow_sequence(flow_rows, 'Ablauf', 'ACTION', source_file,
+                                                  mappings, profile, used_ids, expected_by_step)
+    steps.extend(action_and_exp_nodes)
 
     for exp_line, exp_data in unassociated_expected:
         exp_exec_id = _make_id(f'S{len(steps)+1}.E', used_ids)
         exp_step = _compile_command(exp_exec_id, 'EXPECTED', None, exp_data['Befehl'], exp_line,
-                                    'Erwartungen', source_file, mappings, profile)
+                                    'Erwartungen', source_file, mappings, profile, scope=())
         steps.append(exp_step)
 
     # 3. Postconditions (Cleanup)
-    cleanup_rows = [row for row in sections['Nachbedingungen'] if row[1]['Test_ID'] == test_id]
     for line, data in cleanup_rows:
         if data.get('type') == 'loop':
             steps.append(_compile_loop(data, line, 'Nachbedingungen', 'CLEANUP', source_file, mappings, profile, used_ids))

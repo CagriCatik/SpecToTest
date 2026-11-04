@@ -33,19 +33,20 @@ def run_tc_07_controldesk_hil_simulation(bench):
     140. Zündung aus
     ========================================================================
     """
-    # --- Precondition ---
-    # 10. Zündung an
-    ignition.set_ignition(bench, state=True)
-    # 20. Versorgung auf 13.5 V setzen
-    supply.set_supply(bench, value=Decimal('13.5'))
-    # 30. Parameter GAIN auf 0 schreiben
-    hmi.write_parameter(bench, parameter='GAIN', value=Decimal('0'))
-    # 40. CAN-Signal BatteryVoltageCAN auf 13.5 V setzen
-    can.set_can_signal(bench, signal='BatteryVoltageCAN', value=Decimal('13.5'))
-    # 50. CAN-Signal DoorContactStatus auf 0 setzen
-    can.set_can_signal(bench, signal='DoorContactStatus', value=Decimal('0'))
-
+    cleanup_errors = []
     try:
+        # --- Precondition ---
+        # 10. Zündung an
+        ignition.set_ignition(bench, state=True)
+        # 20. Versorgung auf 13.5 V setzen
+        supply.set_supply(bench, value=Decimal('13.5'))
+        # 30. Parameter GAIN auf 0 schreiben
+        hmi.write_parameter(bench, parameter='GAIN', value=Decimal('0'))
+        # 40. CAN-Signal BatteryVoltageCAN auf 13.5 V setzen
+        can.set_can_signal(bench, signal='BatteryVoltageCAN', value=Decimal('13.5'))
+        # 50. CAN-Signal DoorContactStatus auf 0 setzen
+        can.set_can_signal(bench, signal='DoorContactStatus', value=Decimal('0'))
+
         # --- Action & Expected Result ---
         # 60. Parameter GAIN auf 42 schreiben
         hmi.write_parameter(bench, parameter='GAIN', value=Decimal('42'))
@@ -64,13 +65,29 @@ def run_tc_07_controldesk_hil_simulation(bench):
     finally:
         # --- Postcondition (Cleanup) ---
         # 110. Parameter GAIN auf 0 schreiben
-        hmi.write_parameter(bench, parameter='GAIN', value=Decimal('0'))
+        try:
+            hmi.write_parameter(bench, parameter='GAIN', value=Decimal('0'))
+        except Exception as _cln_err:
+            cleanup_errors.append(_cln_err)
         # 120. CAN-Signal DoorContactStatus auf 0 setzen
-        can.set_can_signal(bench, signal='DoorContactStatus', value=Decimal('0'))
+        try:
+            can.set_can_signal(bench, signal='DoorContactStatus', value=Decimal('0'))
+        except Exception as _cln_err:
+            cleanup_errors.append(_cln_err)
         # 130. CAN-Signal BrakePedalPosition auf 0 % setzen
-        can.set_can_signal(bench, signal='BrakePedalPosition', value=Decimal('0'))
+        try:
+            can.set_can_signal(bench, signal='BrakePedalPosition', value=Decimal('0'))
+        except Exception as _cln_err:
+            cleanup_errors.append(_cln_err)
         # 140. Zündung aus
-        ignition.set_ignition(bench, state=False)
+        try:
+            ignition.set_ignition(bench, state=False)
+        except Exception as _cln_err:
+            cleanup_errors.append(_cln_err)
+        if cleanup_errors:
+            if len(cleanup_errors) == 1:
+                raise cleanup_errors[0]
+            raise ExceptionGroup("Multiple errors during cleanup", cleanup_errors)
     return TestResult('TC_07_CONTROLDESK_HIL_SIMULATION', "PASS")
 
 RUNNERS = {

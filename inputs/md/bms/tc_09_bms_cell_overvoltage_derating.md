@@ -1,0 +1,38 @@
+# TESTFALL: TC_09_BMS_CELL_OVERVOLTAGE_DERATING
+**NAME:** Tc 09 Bms Cell Overvoltage Derating
+
+## Precondition
+10. Zündung an
+20. CAN-Signal Clamp15Status auf 1 setzen
+30. CAN-Signal BMSState auf 4 setzen
+40. CAN-Signal PackSOC auf 85 % setzen
+50. CAN-Signal MaxChargeCurrent auf 120 A setzen
+60. CAN-Signal CellVoltageMax auf 4.10 V setzen
+70. CAN-Signal HVMainPosContactState auf 1 setzen
+80. CAN-Signal HVMainNegContactState auf 1 setzen
+90. Fehlerspeicher BMS löschen
+
+## Action
+100. CAN-Signal CellVoltageMax auf 4.20 V setzen
+110. CAN-Signal MaxChargeCurrent auf 40 A setzen
+120. CAN-Signal CellVoltageMax auf 4.28 V setzen
+130. CAN-Signal MaxChargeCurrent auf 0 A setzen
+140. CAN-Signal HVMainPosContactState auf 0 setzen
+150. CAN-Signal BMSState auf 5 setzen
+160. Fehlerspeicher BMS lesen
+
+## Expected Result
+110. CAN-Signal MaxChargeCurrent ist 40 A
+130. CAN-Signal MaxChargeCurrent ist 0 A
+140. CAN-Signal HVMainPosContactState ist 0
+150. CAN-Signal BMSState ist 5
+160. Fehlerspeichereintrag DTC_BMS_CELL_OVERVOLTAGE in BMS eingetragen
+
+## Postcondition
+170. CAN-Signal CellVoltageMax auf 3.70 V setzen
+180. CAN-Signal MaxChargeCurrent auf 0 A setzen
+190. CAN-Signal HVMainPosContactState auf 0 setzen
+200. CAN-Signal BMSState auf 1 setzen
+210. Fehlerspeicher BMS löschen
+220. CAN-Signal Clamp15Status auf 0 setzen
+230. Zündung aus

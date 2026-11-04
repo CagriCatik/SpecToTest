@@ -18,12 +18,12 @@ def run_tc_10_bms_thermal_derating_sweep(bench):
     
     Action
     70: FOR (temp;[35, 45, 55, 65])
+    70. CAN-Signal CellTempMax ist 55 °C
     80. CAN-Signal CoolingRequest auf 2 setzen
     80. CAN-Signal CoolingRequest ist 2
     90. CAN-Signal MaxDischargeCurrent auf 150 A setzen
     90. CAN-Signal MaxDischargeCurrent ist 150 A
     100. Warte 100 ms
-    70. CAN-Signal CellTempMax ist 55 °C
     
     Postcondition
     110. CAN-Signal CellTempMax auf 25 °C setzen
@@ -34,21 +34,22 @@ def run_tc_10_bms_thermal_derating_sweep(bench):
     160. Zündung aus
     ========================================================================
     """
-    # --- Precondition ---
-    # 10. Zündung an
-    ignition.set_ignition(bench, state=True)
-    # 20. CAN-Signal Clamp15Status auf 1 setzen
-    can.set_can_signal(bench, signal='Clamp15Status', value=Decimal('1'))
-    # 30. CAN-Signal BMSState auf 3 setzen
-    can.set_can_signal(bench, signal='BMSState', value=Decimal('3'))
-    # 40. CAN-Signal CellTempMax auf 25 °C setzen
-    can.set_can_signal(bench, signal='CellTempMax', value=Decimal('25'))
-    # 50. CAN-Signal CoolingRequest auf 0 setzen
-    can.set_can_signal(bench, signal='CoolingRequest', value=Decimal('0'))
-    # 60. CAN-Signal MaxDischargeCurrent auf 400 A setzen
-    can.set_can_signal(bench, signal='MaxDischargeCurrent', value=Decimal('400'))
-
+    cleanup_errors = []
     try:
+        # --- Precondition ---
+        # 10. Zündung an
+        ignition.set_ignition(bench, state=True)
+        # 20. CAN-Signal Clamp15Status auf 1 setzen
+        can.set_can_signal(bench, signal='Clamp15Status', value=Decimal('1'))
+        # 30. CAN-Signal BMSState auf 3 setzen
+        can.set_can_signal(bench, signal='BMSState', value=Decimal('3'))
+        # 40. CAN-Signal CellTempMax auf 25 °C setzen
+        can.set_can_signal(bench, signal='CellTempMax', value=Decimal('25'))
+        # 50. CAN-Signal CoolingRequest auf 0 setzen
+        can.set_can_signal(bench, signal='CoolingRequest', value=Decimal('0'))
+        # 60. CAN-Signal MaxDischargeCurrent auf 400 A setzen
+        can.set_can_signal(bench, signal='MaxDischargeCurrent', value=Decimal('400'))
+
         # --- Action & Expected Result ---
         # 70: FOR (temp;[35, 45, 55, 65])
         for temp in [35, 45, 55, 65]:
@@ -59,6 +60,8 @@ def run_tc_10_bms_thermal_derating_sweep(bench):
             # 73: BREAK (temp == 55)
             if temp == 55:
                 break
+        # 70. CAN-Signal CellTempMax ist 55 °C
+        can.expect_can_signal(bench, signal='CellTempMax', value=Decimal('55'))
         # 80. CAN-Signal CoolingRequest auf 2 setzen
         can.set_can_signal(bench, signal='CoolingRequest', value=Decimal('2'))
         # 80. CAN-Signal CoolingRequest ist 2
@@ -69,22 +72,42 @@ def run_tc_10_bms_thermal_derating_sweep(bench):
         can.expect_can_signal(bench, signal='MaxDischargeCurrent', value=Decimal('150'))
         # 100. Warte 100 ms
         timing.wait(bench, seconds=Decimal('0.1'))
-        # 70. CAN-Signal CellTempMax ist 55 °C
-        can.expect_can_signal(bench, signal='CellTempMax', value=Decimal('55'))
     finally:
         # --- Postcondition (Cleanup) ---
         # 110. CAN-Signal CellTempMax auf 25 °C setzen
-        can.set_can_signal(bench, signal='CellTempMax', value=Decimal('25'))
+        try:
+            can.set_can_signal(bench, signal='CellTempMax', value=Decimal('25'))
+        except Exception as _cln_err:
+            cleanup_errors.append(_cln_err)
         # 120. CAN-Signal CoolingRequest auf 0 setzen
-        can.set_can_signal(bench, signal='CoolingRequest', value=Decimal('0'))
+        try:
+            can.set_can_signal(bench, signal='CoolingRequest', value=Decimal('0'))
+        except Exception as _cln_err:
+            cleanup_errors.append(_cln_err)
         # 130. CAN-Signal MaxDischargeCurrent auf 300 A setzen
-        can.set_can_signal(bench, signal='MaxDischargeCurrent', value=Decimal('300'))
+        try:
+            can.set_can_signal(bench, signal='MaxDischargeCurrent', value=Decimal('300'))
+        except Exception as _cln_err:
+            cleanup_errors.append(_cln_err)
         # 140. CAN-Signal BMSState auf 1 setzen
-        can.set_can_signal(bench, signal='BMSState', value=Decimal('1'))
+        try:
+            can.set_can_signal(bench, signal='BMSState', value=Decimal('1'))
+        except Exception as _cln_err:
+            cleanup_errors.append(_cln_err)
         # 150. CAN-Signal Clamp15Status auf 0 setzen
-        can.set_can_signal(bench, signal='Clamp15Status', value=Decimal('0'))
+        try:
+            can.set_can_signal(bench, signal='Clamp15Status', value=Decimal('0'))
+        except Exception as _cln_err:
+            cleanup_errors.append(_cln_err)
         # 160. Zündung aus
-        ignition.set_ignition(bench, state=False)
+        try:
+            ignition.set_ignition(bench, state=False)
+        except Exception as _cln_err:
+            cleanup_errors.append(_cln_err)
+        if cleanup_errors:
+            if len(cleanup_errors) == 1:
+                raise cleanup_errors[0]
+            raise ExceptionGroup("Multiple errors during cleanup", cleanup_errors)
     return TestResult('TC_10_BMS_THERMAL_DERATING_SWEEP', "PASS")
 
 RUNNERS = {

@@ -1,6 +1,6 @@
 # SpecToTest: Deterministischer Testfall-Compiler
 
-Ein nach den Prinzipien der **Hexagonalen Architektur (Ports & Adapters)** entwickelter Testfall-Compiler. **SpecToTest** übersetzt natürlichsprachliche, lesbare Spezifikationen (`.txt`) über konfigurierbare Regex-Mappings (`.toml`) und typsichere Verträge (`OperationContract`) in deterministischen, wartbaren und direkt lesbaren Python-Testcode.
+Ein nach den Prinzipien der **Hexagonalen Architektur (Ports & Adapters)** entwickelter Testfall-Compiler. **SpecToTest** übersetzt natürlichsprachliche, lesbare Spezifikationen (`.txt` und `.md`) über konfigurierbare Regex-Mappings (`.toml`) und typsichere Verträge (`OperationContract`) in deterministischen, wartbaren und direkt lesbaren Python-Testcode.
 
 ---
 
@@ -196,52 +196,63 @@ SpecToTest/
 │   ├── hmi.py                              # Display & Parameter-Interaktion (screen, parameter)
 │   └── can.py                              # CAN-Signal Stimulation & Verifikation
 │
-├── inputs/                                 # Konfigurationen & Spezifikationen
+├── inputs/                                 # Konfigurationen & kategorisierte Spezifikationen
 │   ├── can_signals.json                    # CAN-Signal-Datenbank (ID, Zykluszeit, Bit-Position, Einheit)
 │   ├── demo_bench.json                     # Prüfstandskonfiguration (Schwellen, Delays, CAN-Defaults)
 │   ├── operation_mapping.toml              # Sprach-Mappings für den Compiler
 │   ├── resources.json                      # Zulässige Ressourcen (ECUs, Parameter, CAN-Signale)
-│   ├── tc_01_undervoltage_recovery.txt     # Testfall: Unterspannungserkennung & Fehlerspeicher
-│   ├── tc_02_hmi_loop_verification.txt     # Testfall: HMI-Navigation & Schleife mit Abbruch
-│   ├── tc_03_diagnostic_powercycle.txt     # Testfall: Powercycle mit Postcondition-Schleife
-│   ├── tc_04_parameter_limits_sweep.txt    # Testfall: Parameter-Grenzwerte im Schleifendurchlauf
-│   ├── tc_05_diagnostic_timing_undervoltage.txt # Testfall: Diagnose mit explizitem Timing & Monitor
-│   ├── tc_06_can_signal_transmission.txt   # Testfall: CAN-Signal-Stimulation & Schleifen-Sweep
-│   ├── tc_07_controldesk_hil_simulation.txt# Testfall: HiL-Simulation via dSPACE ControlDesk & CAN
-│   ├── tc_08_bms_hv_precharge_sequence.txt # Testfall: BMS HV-Vorladung & Schützansteuerung
-│   ├── tc_09_bms_cell_overvoltage_derating.txt # Testfall: Zellüberspannung & Ladedrosselung
-│   ├── tc_10_bms_thermal_derating_sweep.txt# Testfall: Thermomanagement & Kühlanforderung
-│   ├── tc_11_bms_isolation_monitoring.txt  # Testfall: Isolationsüberwachung & Fehlereinspeisung
-│   └── tc_12_bms_signal_tolerances_and_ranges.txt # Testfall: Signal-Toleranzen & Relationale Operatoren
+│   │
+│   ├── bms/                                # Kategorie: Battery Management System (BMS)
+│   │   ├── tc_08_bms_hv_precharge_sequence.{md,txt}
+│   │   ├── tc_09_bms_cell_overvoltage_derating.{md,txt}
+│   │   ├── tc_10_bms_thermal_derating_sweep.{md,txt}
+│   │   ├── tc_11_bms_isolation_monitoring.{md,txt}
+│   │   └── tc_12_bms_signal_tolerances_and_ranges.{md,txt}
+│   ├── can/                                # Kategorie: CAN-Bus Kommunikation & Signale
+│   │   └── tc_06_can_signal_transmission.{md,txt}
+│   ├── diagnostics/                        # Kategorie: Diagnose, UDS & Spannungsversorgung
+│   │   ├── tc_01_undervoltage_recovery.{md,txt}
+│   │   ├── tc_03_diagnostic_powercycle.{md,txt}
+│   │   ├── tc_05_diagnostic_timing_undervoltage.{md,txt}
+│   │   └── tc_13_reference_undervoltage.{md,txt}
+│   ├── hil/                                # Kategorie: HiL-Simulation & dSPACE ControlDesk
+│   │   └── tc_07_controldesk_hil_simulation.{md,txt}
+│   ├── hmi/                                # Kategorie: Mensch-Maschine-Schnittstelle
+│   │   └── tc_02_hmi_loop_verification.{md,txt}
+│   ├── limits/                             # Kategorie: Grenzwerte & Parameter-Sweeps
+│   │   └── tc_04_parameter_limits_sweep.{md,txt}
+│   ├── md/                                 # Format-Spiegel: Reine Markdown-Spezifikationen
+│   └── txt/                                # Format-Spiegel: Reine Text-Spezifikationen
 │
 ├── generated/                              # Generierter, auditierbarer Python-Testcode
-│   ├── test_tc01.py
-│   ├── test_tc02.py
-│   ├── test_tc03.py
-│   ├── test_tc04.py
-│   ├── test_tc05.py
-│   ├── test_tc06.py
-│   ├── test_tc07.py
-│   ├── test_tc08.py
-│   ├── test_tc09.py
-│   ├── test_tc10.py
-│   ├── test_tc11.py
-│   └── test_tc12.py
+│   ├── bms/                                # Generierte BMS-Testfälle (test_tc08 .. test_tc12)
+│   ├── can/                                # Generierte CAN-Testfälle (test_tc06)
+│   ├── diagnostics/                        # Generierte Diagnose-Testfälle (test_tc01, test_tc03, etc.)
+│   ├── hil/                                # Generierte HiL-Testfälle (test_tc07)
+│   ├── hmi/                                # Generierte HMI-Testfälle (test_tc02)
+│   ├── limits/                             # Generierte Grenzwert-Testfälle (test_tc04)
+│   └── test_tc01.py .. test_tc13.py        # Flat-kompatible Testskripte
 │
-├── run_bench.py                            # Testbench-Runner & HTML-Report Generator
+├── run_bench.py                            # Testbench-Runner & HTML-Report Generator (kategorie-fähig)
 │
-└── tests/                                  # Automatisierte Unit- & Regressionstests
-    └── test_pipeline.py                    # 38 umfassende Pipeline- & Architektur-Tests
+└── tests/                                  # Strukturierte 5-stufige Test-Architektur
+    ├── common.py                           # Gemeinsame Fixtures, Pfade und BaseTestCase
+    ├── unit/                               # Isolierte Komponententests (Parser, Typen, Scoping, Log)
+    ├── module/                             # Modultests (Mapping-Engine, Compiler, Generator, Report)
+    ├── interface/                          # Schnittstellentests (Ports, Bench-Protokolle, Exceptions)
+    ├── integration/                        # Integrationstests (BMS-Domäne, Diagnostics, CAN, Timing)
+    └── e2e/                                # End-to-End Tests (Referenzfall, CLI, Batch-Runner)
 ```
 
 ---
 
 ## Detaillierte Funktionsweise
 
-### 5.1 Testspezifikation (`.txt`)
+### 5.1 Testspezifikation (`.txt` & `.md`)
 
-Spezifikationen werden als Textdateien geschrieben und in vier klare Phasen unterteilt:
+Spezifikationen können als **reine Textdateien (`.txt`)** oder als formatierte **Markdown-Dateien (`.md`)** verfasst werden. Sie werden in vier klare Phasen unterteilt:
 
+````carousel
 ```text
 Precondition
 10. Zündung an
@@ -266,12 +277,37 @@ Postcondition
 90. Zündung aus
 100. FSP BCM1 löschen
 ```
+<!-- slide -->
+```markdown
+# TESTFALL: TC_01_UNDERVOLTAGE_RECOVERY
+**NAME:** Unterspannung und Wiederanlauf
+
+## Precondition
+- 10. Zündung an
+- 20. Fehlerspeicher BCM1 löschen
+- 30. Batteriespannung = 13.8V
+
+## Action
+- 40. Batteriespannung = 7000mV
+- 50. Warte 1 s
+- 60. Fehlerspeicher BCM1 lesen
+
+## Expected Result
+- 60. Fehlerspeichereintrag DTC00173 eingetragen
+
+## Postcondition
+- 70. Batteriespannung = 13.8V
+- 80. Zündung aus
+- 90. Fehlerspeicher BCM1 löschen
+```
+````
 
 #### Wichtige Features des Parsers:
-1. **Verknüpfung von Aktion und Erwartung:** Eine Zeile unter `Expected Result` mit der Nummer `60.` wird automatisch der Aktion `60.` aus `Action` zugeordnet und direkt nach ihr geprüft.
-2. **Physikalische Einheiten:** Werte wie `7000mV` werden automatisch zu `Decimal('7')` (Volt) normalisiert; `500 ms` zu `Decimal('0.5')` (Sekunden).
-3. **Schleifen & Bedingungen:** Schleifen werden mit `FOR (var;[1, 2, 3])` geöffnet und mit `END FOR` geschlossen. Vorzeitiger Abbruch erfolgt über `BREAK (bedingung)` oder unbedingtes `BREAK`.
-4. **Kommentare:** Zeilen mit `#` werden als Inline-Kommentare behandelt.
+1. **Volle Markdown-Unterstützung (`.md`):** Überschriften (`#`, `##`), Markdown-Listen (`- `, `* `), Fettschrift (`**NAME:**`), Fenced Code Blocks (```` ``` ````) und HTML-Kommentare (`<!-- ... -->`) werden nativ verarbeitet.
+2. **Verknüpfung von Aktion und Erwartung:** Eine Zeile unter `Expected Result` mit der Nummer `60.` wird automatisch der Aktion `60.` aus `Action` zugeordnet und direkt nach ihr geprüft.
+3. **Physikalische Einheiten:** Werte wie `7000mV` werden automatisch zu `Decimal('7')` (Volt) normalisiert; `500 ms` zu `Decimal('0.5')` (Sekunden).
+4. **Schleifen & Bedingungen:** Schleifen werden mit `FOR (var;[1, 2, 3])` geöffnet und mit `END FOR` geschlossen. Vorzeitiger Abbruch erfolgt über `BREAK (bedingung)` oder unbedingtes `BREAK`.
+5. **Kommentare:** Zeilen mit `#`, `//`, `/* ... */` oder `<!-- ... -->` werden ignoriert.
 
 ---
 
@@ -621,22 +657,23 @@ source .venv/bin/activate
 
 ### 2. Testfälle generieren
 
-Kompiliert eine TXT-Spezifikation in ein ausführbares Python-Skript:
-
+#### Option A: Gesamten kategorisierten Ordner auf einmal kompilieren (Empfohlen)
 ```bash
 python generate.py \
-  --spec inputs/tc_01_undervoltage_recovery.txt \
+  --spec inputs/ \
   --mapping inputs/operation_mapping.toml \
   --resources inputs/resources.json \
-  --output generated/test_tc01.py
+  --output generated/
 ```
+*Kompiliert automatisch alle Kategorien (`bms`, `can`, `diagnostics`, `hil`, `hmi`, `limits`) und erzeugt strukturierte Ordner in `generated/`.*
 
-Alle Testfälle auf einmal kompilieren:
+#### Option B: Eine einzelne Spezifikation kompilieren
 ```bash
-for spec in inputs/tc_*.txt; do
-  name=$(basename "$spec" .txt | sed 's/tc_0/test_tc0/')
-  python generate.py --spec "$spec" --mapping inputs/operation_mapping.toml --resources inputs/resources.json --output "generated/${name}.py"
-done
+python generate.py \
+  --spec inputs/diagnostics/tc_01_undervoltage_recovery.md \
+  --mapping inputs/operation_mapping.toml \
+  --resources inputs/resources.json \
+  --output generated/diagnostics/test_tc01.py
 ```
 
 ---
@@ -674,20 +711,36 @@ PYTHONPATH=. python generated/test_tc01.py --bench-type vector --html-report rep
 
 ---
 
-### 4. Pipeline- und Unit-Tests ausführen
+### 4. Strukturierte Test-Suite ausführen (Unit, Modul, Interface, Integration, E2E)
 
-Führt die gesamte Regressionstestsuite aus (Architekturtests, Parsing, Validierung, Rendering, Fehlerpfade):
+Führt die gesamte Regressionstestsuite über alle 5 Teststufen aus:
 
 ```bash
+# Alle 47 Tests über alle Stufen ausführen:
 python -m unittest discover -s tests -v
+```
+
+Einzelne Teststufen gezielt ausführen:
+```bash
+# 1. Reine Unit-Tests (Parser, Typen, Scoping):
+python -m unittest discover -s tests/unit -v
+
+# 2. Modultests (Mapping-Engine, Compiler-Core, HTML-Report):
+python -m unittest discover -s tests/module -v
+
+# 3. Schnittstellentests (BenchPort, Adapter, Protections):
+python -m unittest discover -s tests/interface -v
+
+# 4. Domänen-Integrationstests (BMS, CAN, Timing, Diagnostics):
+python -m unittest discover -s tests/integration -v
+
+# 5. End-to-End Tests (Referenzspezifikation, Batch-Kompilierung):
+python -m unittest discover -s tests/e2e -v
 ```
 
 Ergebnis:
 ```text
-Ran 38 tests in 0.180s
-OK
-```
-
+Ran 47 tests in 0.238s
 OK
 ```
 
@@ -697,11 +750,11 @@ OK
 
 ### Einen neuen Testfall hinzufügen
 
-1. Erstelle eine neue Spezifikationsdatei in `inputs/`, z. B. `inputs/tc_06_can_bus_sleep.txt`.
+1. Erstelle eine neue Spezifikationsdatei in `inputs/`, z. B. `inputs/tc_06_can_bus_sleep.md`.
 2. Definiere die Sektionen `Precondition`, `Action`, `Expected Result` und `Postcondition`.
 3. Kompiliere den Testfall:
    ```bash
-   python generate.py --spec inputs/tc_06_can_bus_sleep.txt --mapping inputs/operation_mapping.toml --resources inputs/resources.json --output generated/test_tc06.py
+   python generate.py --spec inputs/tc_06_can_bus_sleep.md --mapping inputs/operation_mapping.toml --resources inputs/resources.json --output generated/test_tc06.py
    ```
 
 ### Eine neue Operation implementieren
@@ -742,4 +795,41 @@ OK
    parameters = { can_id = "can_id", payload = "payload" }
    ```
 
-Fertig! Ab sofort kann der Satz `CAN-Botschaft 0x123 mit Payload AA BB CC senden` in jeder `.txt`-Spezifikation verwendet werden. Der Compiler-Kern muss dafür **nicht** modifiziert werden.
+Fertig! Ab sofort kann der Satz `CAN-Botschaft 0x123 mit Payload AA BB CC senden` in jeder `.md`- oder `.txt`-Spezifikation verwendet werden. Der Compiler-Kern muss dafür **nicht** modifiziert werden.
+
+---
+
+## Sprachvertrag, Erwartungsbindung & Robuste Laufzeit
+
+### 1. Verbindlicher Sprachvertrag (`docs/specification_language.md`)
+Die vollständige Sprachdefinition ist in [docs/specification_language.md](docs/specification_language.md) festgeschrieben:
+- **Eindeutige Referenzen:** Jede Schrittnummer im `Action`-Baum muss eindeutig sein. Doppelte Schrittnummern blockieren die Übersetzung mit `SpecError`.
+- **Keine verwaisten Erwartungen:** Nummerierte Erwartungen müssen auf eine existierende Aktion oder Schleife im `Action`-Baum verweisen. Verweise auf unbekannte Schritte oder auf Vor-/Nachbedingungen werden strikt abgelehnt.
+- **Unnummerierte Erwartungen:** Werden als Abschlussprüfungen nach dem gesamten `Action`-Block und vor den Nachbedingungen ausgeführt.
+
+### 2. Rekursive Erwartungsbindung
+Erwartungen werden im AST direkt an die Zielknoten gebunden:
+- **Aktionsschritte:** Die Prüfung läuft unmittelbar nach dem Zielschritt.
+- **Schritte innerhalb einer `FOR`-Schleife:** Die Prüfung läuft pro Schleifeniteration unmittelbar nach dem Schritt im Körper (mit Zugriff auf die Schleifenvariable).
+- **Prüfung auf die Schleife selbst:** Eine Erwartung, die auf die Schrittnummer der `FOR`-Schleife referenziert, wird genau einmal nach Abschluss oder `BREAK` der Schleife ausgeführt (ohne Zugriff auf die Schleifenvariable).
+
+### 3. Geschützte Vorbedingungen & Isolierte Cleanup-Schritte
+- **Vorbedingungen und Aktionen im geschützten Block:** Sowohl `Precondition` als auch `Action` liegen innerhalb des `try:`-Blocks. Schlägt ein Vorbedingungsschritt fehl, wird die Ausführung der Nachbedingungen (`Postcondition`) dennoch garantiert.
+- **Isolierte Cleanup-Schritte:** Jeder Nachbedingungsschritt ist einzeln geschützt (`try ... except`). Schlägt Schritt 70 fehl, werden die Schritte 80 und 90 dennoch zwingend ausgeführt.
+- **Fehlererhaltung:** Primärfehler (z. B. `CheckFailed` oder Kommunikationsabbruch) und nachfolgende Fehler in der Nachbedingung werden gemeinsam gesammelt und im Bericht vollständig ausgewiesen.
+
+### 4. Atomare Generierung
+- Jede Generierung erfolgt atomar über temporäre Dateien (`.tmp`). Schlägt eine Übersetzung fehl, bleibt der vorherige Stand unberührt.
+
+### 5. Multi-TOML Mappings
+Mehrere Mapping-Dateien können über wiederholtes `--mapping` übergeben werden:
+```bash
+python generate.py \
+  --spec inputs/tc_01_undervoltage_recovery.md \
+  --mapping inputs/operation_mapping.toml \
+  --mapping inputs/extra_mapping.toml \
+  --resources inputs/resources.json \
+  --output generated/test_tc01.py
+```
+Mapping-IDs werden dateiübergreifend auf globale Eindeutigkeit validiert. Die Reihenfolge konfliktfreier Mappingdateien ändert das Ergebnis nicht.
+

@@ -7,6 +7,7 @@ class TestResult:
     test_id: str
     result: str = 'PASS'
     error: Exception | None = None
+    cleanup_errors: list = field(default_factory=list)
     records: list = field(default_factory=list)
     duration: float = 0.0
     specification: str = ''
@@ -23,5 +24,7 @@ class TestResult:
             data['steps'] = self.records
         if self.error is not None:
             data['error'] = str(self.error)
+        if self.cleanup_errors:
+            data['cleanup_errors'] = [str(err) for err in self.cleanup_errors]
         return data
 

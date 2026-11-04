@@ -28,17 +28,18 @@ def run_tc_06_can_signal_transmission(bench):
     110. Zündung aus
     ========================================================================
     """
-    # --- Precondition ---
-    # 10. Zündung an
-    ignition.set_ignition(bench, state=True)
-    # 20. CAN-Signal Clamp15Status auf 1 setzen
-    can.set_can_signal(bench, signal='Clamp15Status', value=Decimal('1'))
-    # 30. CAN-Signal EngineSpeed auf 0 rpm setzen
-    can.set_can_signal(bench, signal='EngineSpeed', value=Decimal('0'))
-    # 40. CAN-Signal VehicleSpeed auf 0 km/h setzen
-    can.set_can_signal(bench, signal='VehicleSpeed', value=Decimal('0'))
-
+    cleanup_errors = []
     try:
+        # --- Precondition ---
+        # 10. Zündung an
+        ignition.set_ignition(bench, state=True)
+        # 20. CAN-Signal Clamp15Status auf 1 setzen
+        can.set_can_signal(bench, signal='Clamp15Status', value=Decimal('1'))
+        # 30. CAN-Signal EngineSpeed auf 0 rpm setzen
+        can.set_can_signal(bench, signal='EngineSpeed', value=Decimal('0'))
+        # 40. CAN-Signal VehicleSpeed auf 0 km/h setzen
+        can.set_can_signal(bench, signal='VehicleSpeed', value=Decimal('0'))
+
         # --- Action & Expected Result ---
         # 50. CAN-Signal EngineSpeed auf 2500 rpm setzen
         can.set_can_signal(bench, signal='EngineSpeed', value=Decimal('2500'))
@@ -60,13 +61,29 @@ def run_tc_06_can_signal_transmission(bench):
     finally:
         # --- Postcondition (Cleanup) ---
         # 80. CAN-Signal VehicleSpeed auf 0 km/h setzen
-        can.set_can_signal(bench, signal='VehicleSpeed', value=Decimal('0'))
+        try:
+            can.set_can_signal(bench, signal='VehicleSpeed', value=Decimal('0'))
+        except Exception as _cln_err:
+            cleanup_errors.append(_cln_err)
         # 90. CAN-Signal EngineSpeed auf 0 rpm setzen
-        can.set_can_signal(bench, signal='EngineSpeed', value=Decimal('0'))
+        try:
+            can.set_can_signal(bench, signal='EngineSpeed', value=Decimal('0'))
+        except Exception as _cln_err:
+            cleanup_errors.append(_cln_err)
         # 100. CAN-Signal Clamp15Status auf 0 setzen
-        can.set_can_signal(bench, signal='Clamp15Status', value=Decimal('0'))
+        try:
+            can.set_can_signal(bench, signal='Clamp15Status', value=Decimal('0'))
+        except Exception as _cln_err:
+            cleanup_errors.append(_cln_err)
         # 110. Zündung aus
-        ignition.set_ignition(bench, state=False)
+        try:
+            ignition.set_ignition(bench, state=False)
+        except Exception as _cln_err:
+            cleanup_errors.append(_cln_err)
+        if cleanup_errors:
+            if len(cleanup_errors) == 1:
+                raise cleanup_errors[0]
+            raise ExceptionGroup("Multiple errors during cleanup", cleanup_errors)
     return TestResult('TC_06_CAN_SIGNAL_TRANSMISSION', "PASS")
 
 RUNNERS = {

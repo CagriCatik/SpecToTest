@@ -61,6 +61,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     .badge-pass {{ background: var(--pass-bg); color: var(--pass); border: 1px solid var(--pass); }}
     .badge-fail {{ background: var(--fail-bg); color: var(--fail); border: 1px solid var(--fail); }}
     .badge-error {{ background: var(--error-bg); color: var(--error); border: 1px solid var(--error); }}
+    .badge-category {{ background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid #3b82f6; }}
     .meta-bar {{ font-size: 13px; color: var(--text-muted); display: flex; gap: 16px; flex-wrap: wrap; }}
 
     /* KPI Cards */
@@ -331,7 +332,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       const query = document.getElementById('searchInput').value.toLowerCase();
       const cards = document.querySelectorAll('.test-card');
       cards.forEach(card => {{
-        const text = card.dataset.testid.toLowerCase();
+        const text = (card.dataset.testid + ' ' + (card.dataset.category || '')).toLowerCase();
         if (text.includes(query)) {{
           card.style.display = 'block';
         }} else {{
@@ -352,17 +353,20 @@ def _render_test_card(log) -> str:
     spec_text = getattr(log, 'specification', '') or ''
     error = getattr(log, 'error', None)
     records = getattr(log, 'records', []) or []
+    category = getattr(log, 'category', '')
+    category_badge = f'<span class="badge badge-category">{html.escape(str(category).upper())}</span>' if category and category != 'general' else ''
 
     badge_class = f"badge-{result.lower()}"
 
     error_html = ""
     if error:
-        error_html = f'<div class="error-banner"><strong>FEHLER:</strong> {html.escape(str(error))}</div>'
+        err_type = type(error).__name__
+        error_html = f'<div class="error-banner"><strong>FEHLER ({html.escape(err_type)}):</strong> {html.escape(str(error))}</div>'
 
     spec_html = ""
     if spec_text.strip():
         spec_html = f"""
-        <div class="section-title">Original-Spezifikation (.txt)</div>
+        <div class="section-title">Original-Spezifikation (.md / .txt)</div>
         <pre class="spec-box">{html.escape(spec_text.strip())}</pre>
         """
 
@@ -372,13 +376,22 @@ def _render_test_card(log) -> str:
         for r in records:
             t = html.escape(str(r.get('time', '')))
             op = html.escape(str(r.get('operation', '')))
-            details = html.escape(str(r.get('details', '')))
-            rows.append(f"<tr><td class='trace-time'>{t}</td><td class='trace-op'>{op}</td><td class='trace-details'>{details}</td></tr>")
+            details_dict = r.get('details', {})
+            if isinstance(details_dict, dict):
+                status = details_dict.get('status')
+                status_pill = ""
+                if status == 'CONFIRMED':
+                    status_pill = " <span class='badge' style='background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid #10b981; font-size: 10px; padding: 1px 6px;'>CONFIRMED</span>"
+                clean_details = {k: v for k, v in details_dict.items() if k != 'status'}
+                details_str = html.escape(str(clean_details)) + status_pill
+            else:
+                details_str = html.escape(str(details_dict))
+            rows.append(f"<tr><td class='trace-time'>{t}</td><td class='trace-op'>{op}</td><td class='trace-details'>{details_str}</td></tr>")
         trace_html = f"""
         <div class="section-title" style="margin-top: 14px;">Prüfstands-Ausführungs-Trace ({len(records)} Aktionen)</div>
         <table class="trace-table">
           <thead>
-            <tr><th>Sim-Zeit</th><th>Operation</th><th>Parameter / Werte</th></tr>
+            <tr><th>Sim-Zeit</th><th>Operation</th><th>Parameter / Werte / Status</th></tr>
           </thead>
           <tbody>
             {''.join(rows)}
@@ -387,10 +400,11 @@ def _render_test_card(log) -> str:
         """
 
     card_html = f"""
-    <div class="test-card" data-status="{result}" data-testid="{test_id}">
+    <div class="test-card" data-status="{result}" data-testid="{test_id}" data-category="{category}">
       <div class="test-header" onclick="toggleCard(this.parentElement)">
         <div class="test-title-group">
           <span class="badge {badge_class}">{result}</span>
+          {category_badge}
           <span class="test-id">{test_id}</span>
         </div>
         <div class="test-meta">

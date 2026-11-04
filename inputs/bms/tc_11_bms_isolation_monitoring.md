@@ -1,0 +1,28 @@
+# TESTFALL: TC_11_BMS_ISOLATION_MONITORING
+**NAME:** Tc 11 Bms Isolation Monitoring
+
+## Precondition
+10. Zündung an
+20. CAN-Signal Clamp15Status auf 1 setzen
+30. CAN-Signal BMSState auf 3 setzen
+40. CAN-Signal IsolationResistance auf 1500 kOhm setzen
+50. CAN-Signal IsolationStatus auf 0 setzen
+60. Fehlerspeicher BMS löschen
+
+## Action
+70. CAN-Signal IsolationResistance auf 60 kOhm setzen
+80. CAN-Signal IsolationStatus auf 2 setzen
+90. Fehlerspeicher BMS lesen
+
+## Expected Result
+70. CAN-Signal IsolationResistance ist 60 kOhm
+80. Auf CAN-Signal IsolationStatus == 2 warten, maximal 1 s, Prüfintervall 50 ms
+90. Fehlerspeichereintrag DTC_BMS_ISOLATION_FAULT in BMS eingetragen
+
+## Postcondition
+100. CAN-Signal IsolationResistance auf 1500 kOhm setzen
+110. CAN-Signal IsolationStatus auf 0 setzen
+120. CAN-Signal BMSState auf 1 setzen
+130. Fehlerspeicher BMS löschen
+140. CAN-Signal Clamp15Status auf 0 setzen
+150. Zündung aus

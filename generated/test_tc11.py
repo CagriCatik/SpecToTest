@@ -33,21 +33,22 @@ def run_tc_11_bms_isolation_monitoring(bench):
     150. Zündung aus
     ========================================================================
     """
-    # --- Precondition ---
-    # 10. Zündung an
-    ignition.set_ignition(bench, state=True)
-    # 20. CAN-Signal Clamp15Status auf 1 setzen
-    can.set_can_signal(bench, signal='Clamp15Status', value=Decimal('1'))
-    # 30. CAN-Signal BMSState auf 3 setzen
-    can.set_can_signal(bench, signal='BMSState', value=Decimal('3'))
-    # 40. CAN-Signal IsolationResistance auf 1500 kOhm setzen
-    can.set_can_signal(bench, signal='IsolationResistance', value=Decimal('1500'))
-    # 50. CAN-Signal IsolationStatus auf 0 setzen
-    can.set_can_signal(bench, signal='IsolationStatus', value=Decimal('0'))
-    # 60. Fehlerspeicher BMS löschen
-    diagnostic.clear_fault_memory(bench, ecu='BMS')
-
+    cleanup_errors = []
     try:
+        # --- Precondition ---
+        # 10. Zündung an
+        ignition.set_ignition(bench, state=True)
+        # 20. CAN-Signal Clamp15Status auf 1 setzen
+        can.set_can_signal(bench, signal='Clamp15Status', value=Decimal('1'))
+        # 30. CAN-Signal BMSState auf 3 setzen
+        can.set_can_signal(bench, signal='BMSState', value=Decimal('3'))
+        # 40. CAN-Signal IsolationResistance auf 1500 kOhm setzen
+        can.set_can_signal(bench, signal='IsolationResistance', value=Decimal('1500'))
+        # 50. CAN-Signal IsolationStatus auf 0 setzen
+        can.set_can_signal(bench, signal='IsolationStatus', value=Decimal('0'))
+        # 60. Fehlerspeicher BMS löschen
+        diagnostic.clear_fault_memory(bench, ecu='BMS')
+
         # --- Action & Expected Result ---
         # 70. CAN-Signal IsolationResistance auf 60 kOhm setzen
         can.set_can_signal(bench, signal='IsolationResistance', value=Decimal('60'))
@@ -64,17 +65,39 @@ def run_tc_11_bms_isolation_monitoring(bench):
     finally:
         # --- Postcondition (Cleanup) ---
         # 100. CAN-Signal IsolationResistance auf 1500 kOhm setzen
-        can.set_can_signal(bench, signal='IsolationResistance', value=Decimal('1500'))
+        try:
+            can.set_can_signal(bench, signal='IsolationResistance', value=Decimal('1500'))
+        except Exception as _cln_err:
+            cleanup_errors.append(_cln_err)
         # 110. CAN-Signal IsolationStatus auf 0 setzen
-        can.set_can_signal(bench, signal='IsolationStatus', value=Decimal('0'))
+        try:
+            can.set_can_signal(bench, signal='IsolationStatus', value=Decimal('0'))
+        except Exception as _cln_err:
+            cleanup_errors.append(_cln_err)
         # 120. CAN-Signal BMSState auf 1 setzen
-        can.set_can_signal(bench, signal='BMSState', value=Decimal('1'))
+        try:
+            can.set_can_signal(bench, signal='BMSState', value=Decimal('1'))
+        except Exception as _cln_err:
+            cleanup_errors.append(_cln_err)
         # 130. Fehlerspeicher BMS löschen
-        diagnostic.clear_fault_memory(bench, ecu='BMS')
+        try:
+            diagnostic.clear_fault_memory(bench, ecu='BMS')
+        except Exception as _cln_err:
+            cleanup_errors.append(_cln_err)
         # 140. CAN-Signal Clamp15Status auf 0 setzen
-        can.set_can_signal(bench, signal='Clamp15Status', value=Decimal('0'))
+        try:
+            can.set_can_signal(bench, signal='Clamp15Status', value=Decimal('0'))
+        except Exception as _cln_err:
+            cleanup_errors.append(_cln_err)
         # 150. Zündung aus
-        ignition.set_ignition(bench, state=False)
+        try:
+            ignition.set_ignition(bench, state=False)
+        except Exception as _cln_err:
+            cleanup_errors.append(_cln_err)
+        if cleanup_errors:
+            if len(cleanup_errors) == 1:
+                raise cleanup_errors[0]
+            raise ExceptionGroup("Multiple errors during cleanup", cleanup_errors)
     return TestResult('TC_11_BMS_ISOLATION_MONITORING', "PASS")
 
 RUNNERS = {

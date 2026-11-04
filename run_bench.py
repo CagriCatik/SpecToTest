@@ -13,16 +13,28 @@ import time
 
 from tcg.adapters.outbound.dummy_bench import ControlDeskDummyBench, DummyBench, VectorDummyBench, load_config
 from tcg.core.profile import load_profile
+from tcg.runtime.execution_logger import (
+    log_step_record,
+    log_suite_start,
+    log_suite_summary,
+    log_test_case_result,
+    log_test_case_start,
+    setup_execution_logger,
+)
 from tcg.runtime.html_report import generate_html_report
 from tcg.runtime.runner import execute, write_junit_xml
 
 
 def discover_test_modules(suite_dir: Path) -> list[tuple[str, Path]]:
-    """Finds all generated test scripts (test_*.py) in the suite directory."""
-    modules = []
-    for file_path in sorted(suite_dir.glob('test_*.py')):
-        modules.append((file_path.stem, file_path))
-    return modules
+    """Finds all generated test scripts (test_*.py) in the suite directory (including category subdirectories)."""
+    candidates = [p for p in sorted(suite_dir.rglob('test_*.py')) if '__pycache__' not in p.parts]
+    # Deduplicate by stem, preferring categorized (nested) paths over root if both exist
+    chosen_by_stem = {}
+    for p in candidates:
+        depth = len(p.relative_to(suite_dir).parts)
+        if p.stem not in chosen_by_stem or depth > chosen_by_stem[p.stem][0]:
+            chosen_by_stem[p.stem] = (depth, p)
+    return [(p.stem, p) for _, p in sorted(chosen_by_stem.values(), key=lambda item: str(item[1]))]
 
 
 def load_module_runners(module_path: Path) -> dict:
@@ -43,6 +55,7 @@ def main():
     parser.add_argument('--bench-config', default='inputs/demo_bench.json', help='Test bench configuration JSON')
     parser.add_argument('--resources', default='inputs/resources.json', help='Resources profile JSON')
     parser.add_argument('--html-report', default='reports/test_report.html', help='Path for output HTML report')
+    parser.add_argument('--log-dir', default='logs', help='Directory for timestamped execution logs (default: logs)')
     parser.add_argument('--junit-xml', help='Optional path for JUnit XML report')
     parser.add_argument('--filter', help='Optional substring filter for test case IDs')
     args = parser.parse_args()
@@ -51,6 +64,9 @@ def main():
     if not suite_dir.exists():
         print(f"ERROR: Suite directory '{suite_dir}' does not exist.", file=sys.stderr)
         return 2
+
+    # Configure timestamped file logger
+    exec_logger, log_file_path = setup_execution_logger(log_dir=args.log_dir)
 
     # Load configuration & profile
     profile = load_profile(Path(args.resources))
@@ -69,12 +85,15 @@ def main():
         print(f"WARNUNG: Keine Testskripte in '{suite_dir}' gefunden.", file=sys.stderr)
         return 0
 
+    log_suite_start(exec_logger, bench_name, suite_dir, len(test_files))
+
     print("=" * 78)
     print("⚡ SpecToTest — Automatisierter Testbench-Lauf")
     print("=" * 78)
     print(f"Prüfstand:   {bench_name}")
     print(f"Test-Suite:  {suite_dir} ({len(test_files)} Skripte gefunden)")
     print(f"HTML-Report: {args.html_report}")
+    print(f"Log-Datei:   {log_file_path}")
     print("-" * 78)
 
     all_logs = []
@@ -84,6 +103,7 @@ def main():
         try:
             runners = load_module_runners(file_path)
         except Exception as err:
+            exec_logger.error("Fehler beim Laden von %s: %s", file_path.name, err)
             print(f"❌ Fehler beim Laden von {file_path.name}: {err}", file=sys.stderr)
             continue
 
@@ -91,15 +111,24 @@ def main():
             if args.filter and args.filter.lower() not in test_id.lower():
                 continue
 
+            category = file_path.parent.name if file_path.parent != suite_dir else 'general'
+            log_test_case_start(exec_logger, test_id, category)
+
             # Fresh bench instance per test case for deterministic isolation
             bench = bench_cls(bench_cfg)
             log = execute(runner, bench)
+            log.category = category
             all_logs.append(log)
+
+            # Log steps to persistent log file
+            for rec in getattr(log, 'records', []):
+                log_step_record(exec_logger, test_id, rec)
+            log_test_case_result(exec_logger, test_id, log)
 
             status_symbol = "✅ PASS" if log.result == "PASS" else ("❌ FAIL" if log.result == "FAIL" else "⚠️ ERROR")
             duration_ms = getattr(log, 'duration', 0.0) * 1000
             steps_count = len(getattr(log, 'records', []))
-            print(f" {status_symbol}  {test_id:<42} ({steps_count:>2} Schritte, {duration_ms:>6.1f} ms)")
+            print(f" {status_symbol}  [{category:<11}] {test_id:<38} ({steps_count:>2} Schritte, {duration_ms:>6.1f} ms)")
             if log.result != "PASS" and getattr(log, 'error', None):
                 print(f"        └─ Error: {log.error}")
 
@@ -118,12 +147,23 @@ def main():
     html_path = Path(args.html_report)
     generate_html_report(all_logs, html_path, bench_type=bench_name)
     print(f"📊 Interaktiver HTML-Report gespeichert unter: {html_path.resolve()}")
+    print(f"📝 Timestamped Log-Datei gespeichert unter:   {log_file_path.resolve()}")
+    print(f"📌 Aktueller Log-Shortcut (Latest):          {(Path(args.log_dir) / 'latest.log').resolve()}")
 
     # Generate JUnit XML if requested
-    if args.junit_xml:
-        xml_path = Path(args.junit_xml)
+    xml_path = Path(args.junit_xml) if args.junit_xml else None
+    if xml_path:
         write_junit_xml(all_logs, xml_path)
         print(f"📄 JUnit XML Report gespeichert unter:       {xml_path.resolve()}")
+
+    log_suite_summary(
+        exec_logger,
+        all_logs,
+        total_duration,
+        html_report_path=html_path,
+        junit_xml_path=xml_path,
+        log_file_path=log_file_path,
+    )
 
     return 2 if err_cnt > 0 else (1 if fail_cnt > 0 else 0)
 

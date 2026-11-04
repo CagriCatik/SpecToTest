@@ -4,7 +4,14 @@ from decimal import Decimal
 import json
 
 from tcg.core.model import SpecError
-from tcg.ports.bench import BenchPort
+from tcg.ports.bench import (
+    BenchConnectionError,
+    BenchError,
+    BenchLimitViolationError,
+    BenchPort,
+    BenchResourceNotFoundError,
+    BenchWriteError,
+)
 
 
 @dataclass(frozen=True)
@@ -70,7 +77,13 @@ def load_config(path, profile):
 
 
 class DummyBench(BenchPort):
-    """In-memory simulated test bench conforming to BenchPort."""
+    """In-memory simulated test bench conforming to BenchPort.
+
+    Simulates basic electrical supply, ignition, CAN signals, and ECU fault memories.
+    Simulation only; does not connect to real physical hardware.
+    """
+    BENCH_NAME = "DummyBench (Simulation)"
+    is_simulation = True
 
     def __init__(self, config):
         self.config = config
@@ -100,20 +113,31 @@ class DummyBench(BenchPort):
     def set_ignition(self, state: bool) -> None:
         if type(state) is not bool:
             raise TypeError('ignition state must be a boolean')
-        self._log('set_ignition', state=state)
         self.ignition = state
+        if self.ignition != state:
+            raise BenchWriteError(f"Ignition state could not be set to {state}")
+        self._log('set_ignition', state=state, status='CONFIRMED', verified_state=state)
 
     def set_supply(self, value: Decimal) -> None:
-        self._log('set_supply', value=value)
-        self.supply = value
+        val = Decimal(str(value)) if not isinstance(value, Decimal) else value
+        if val < Decimal('0'):
+            raise BenchLimitViolationError(f"Negative power supply voltage {val}V is invalid")
+        if val > Decimal('60'):
+            raise BenchLimitViolationError(f"Power supply voltage {val}V exceeds 60V maximum operating limit")
+        self.supply = val
         self._update()
+        if self.supply != val:
+            raise BenchWriteError(f"Power supply voltage readback mismatch: expected {val}V, got {self.supply}V")
+        self._log('set_supply', value=val, status='CONFIRMED', verified_value=val)
 
     def set_battery_voltage(self, value: Decimal) -> None:
         self.set_supply(value)
 
     def clear_fault_memory(self, ecu: str) -> None:
-        self._log('clear_fault_memory', ecu=ecu)
         self.fault_memory[ecu] = []
+        if len(self.fault_memory.get(ecu, [])) != 0:
+            raise BenchWriteError(f"Fault memory for ECU {ecu} could not be cleared")
+        self._log('clear_fault_memory', ecu=ecu, status='CONFIRMED', cleared=True)
 
     def read_fault_memory(self, ecu: str) -> list[str]:
         entries = self.fault_memory.setdefault(ecu, [])
@@ -142,18 +166,23 @@ class DummyBench(BenchPort):
 
     def select_screen(self, screen: str) -> None:
         if screen not in self.config.screens:
-            raise ValueError(f'screen {screen!r} is not provided by this demo bench')
-        self._log('select_screen', screen=screen)
+            raise BenchResourceNotFoundError(f'screen {screen!r} is not provided by this demo bench')
         self.selected_screen = screen
+        if self.selected_screen != screen:
+            raise BenchWriteError(f"Screen selection '{screen}' could not be verified")
+        self._log('select_screen', screen=screen, status='CONFIRMED', active_screen=screen)
 
     def screen_text(self) -> str:
         return '' if self.selected_screen is None else self.config.screens[self.selected_screen]
 
     def write_parameter(self, parameter: str, value) -> None:
         if parameter not in self.parameters:
-            raise ValueError(f'parameter {parameter!r} is not provided by this demo bench')
-        self._log('write_parameter', parameter=parameter, value=value)
-        self.parameters[parameter] = value
+            raise BenchResourceNotFoundError(f'parameter {parameter!r} is not provided by this demo bench')
+        val = Decimal(str(value)) if not isinstance(value, Decimal) and isinstance(value, (int, float, str)) else value
+        self.parameters[parameter] = val
+        if self.parameters[parameter] != val:
+            raise BenchWriteError(f"Parameter '{parameter}' readback mismatch")
+        self._log('write_parameter', parameter=parameter, value=val, status='CONFIRMED', verified_value=val)
 
     def read_parameter(self, parameter: str):
         if parameter not in self.parameters:
@@ -190,10 +219,17 @@ class DummyBench(BenchPort):
 
     # --- CAN-Bus & Vector CANoe / dSPACE ControlDesk Interface ---
     def set_can_signal(self, signal: str, value) -> None:
+        if not getattr(self, 'can_bus_active', True):
+            raise BenchConnectionError(f"Cannot set CAN signal '{signal}': CAN bus is inactive or in Bus-Off state")
+        if self.can_signals and signal not in self.can_signals:
+            raise BenchResourceNotFoundError(f"CAN signal '{signal}' is not configured on this test bench")
         val = Decimal(str(value)) if not isinstance(value, Decimal) else value
-        self._log('set_can_signal', signal=signal, value=val)
         self.can_signals[signal] = val
         self._update()
+        actual = self.can_signals.get(signal)
+        if actual != val:
+            raise BenchWriteError(f"CAN signal '{signal}' readback mismatch: expected {val}, got {actual}")
+        self._log('set_can_signal', signal=signal, value=val, status='CONFIRMED', verified_value=val)
 
     def get_can_signal(self, signal: str) -> Decimal:
         val = self.can_signals.get(signal, Decimal('0'))
@@ -221,10 +257,12 @@ class DummyBench(BenchPort):
 
 
 class VectorDummyBench(DummyBench):
-    """Spezifischer Testbench-Adapter mit Vector CANoe/CANalyzer-Semantik."""
+    """Spezifischer Testbench-Adapter mit Vector CANoe/CANalyzer-Semantik (Simulation)."""
+    BENCH_NAME = "Vector CANoe Simulation (Dummy)"
 
 
 class ControlDeskDummyBench(DummyBench):
-    """Spezifischer Testbench-Adapter mit dSPACE ControlDesk HiL-Semantik."""
+    """Spezifischer Testbench-Adapter mit dSPACE ControlDesk HiL-Semantik (Simulation)."""
+    BENCH_NAME = "dSPACE ControlDesk Simulation (Dummy)"
 
 

@@ -23,13 +23,14 @@ def run_tc_02_hmi_loop_verification(bench):
     70. Bildschirm HOME auswählen
     ========================================================================
     """
-    # --- Precondition ---
-    # 10. Bildschirm HOME auswählen
-    hmi.select_screen(bench, screen='HOME')
-    # 20. Parameter GAIN auf 0 schreiben
-    hmi.write_parameter(bench, parameter='GAIN', value=Decimal('0'))
-
+    cleanup_errors = []
     try:
+        # --- Precondition ---
+        # 10. Bildschirm HOME auswählen
+        hmi.select_screen(bench, screen='HOME')
+        # 20. Parameter GAIN auf 0 schreiben
+        hmi.write_parameter(bench, parameter='GAIN', value=Decimal('0'))
+
         # --- Action & Expected Result ---
         # 30. Bildschirm SETTINGS auswählen
         hmi.select_screen(bench, screen='SETTINGS')
@@ -49,9 +50,19 @@ def run_tc_02_hmi_loop_verification(bench):
     finally:
         # --- Postcondition (Cleanup) ---
         # 60. Parameter GAIN auf 0 schreiben
-        hmi.write_parameter(bench, parameter='GAIN', value=Decimal('0'))
+        try:
+            hmi.write_parameter(bench, parameter='GAIN', value=Decimal('0'))
+        except Exception as _cln_err:
+            cleanup_errors.append(_cln_err)
         # 70. Bildschirm HOME auswählen
-        hmi.select_screen(bench, screen='HOME')
+        try:
+            hmi.select_screen(bench, screen='HOME')
+        except Exception as _cln_err:
+            cleanup_errors.append(_cln_err)
+        if cleanup_errors:
+            if len(cleanup_errors) == 1:
+                raise cleanup_errors[0]
+            raise ExceptionGroup("Multiple errors during cleanup", cleanup_errors)
     return TestResult('TC_02_HMI_LOOP_VERIFICATION', "PASS")
 
 RUNNERS = {

@@ -30,15 +30,16 @@ def run_tc_03_diagnostic_powercycle(bench):
     100. Zündung aus
     ========================================================================
     """
-    # --- Precondition ---
-    # 10. Zündung an
-    ignition.set_ignition(bench, state=True)
-    # 20. Fehlerspeicher BCM löschen
-    diagnostic.clear_fault_memory(bench, ecu='BCM')
-    # 30. Fehlerspeicher BCM1 löschen
-    diagnostic.clear_fault_memory(bench, ecu='BCM1')
-
+    cleanup_errors = []
     try:
+        # --- Precondition ---
+        # 10. Zündung an
+        ignition.set_ignition(bench, state=True)
+        # 20. Fehlerspeicher BCM löschen
+        diagnostic.clear_fault_memory(bench, ecu='BCM')
+        # 30. Fehlerspeicher BCM1 löschen
+        diagnostic.clear_fault_memory(bench, ecu='BCM1')
+
         # --- Action & Expected Result ---
         # 40. Batteriespannung = 7000mV
         supply.set_battery_voltage(bench, value=Decimal('7'))
@@ -49,19 +50,44 @@ def run_tc_03_diagnostic_powercycle(bench):
     finally:
         # --- Postcondition (Cleanup) ---
         # 60. Batteriespannung = 13.8V
-        supply.set_battery_voltage(bench, value=Decimal('13.8'))
+        try:
+            supply.set_battery_voltage(bench, value=Decimal('13.8'))
+        except Exception as _cln_err:
+            cleanup_errors.append(_cln_err)
         # 70. Zündung aus
-        ignition.set_ignition(bench, state=False)
+        try:
+            ignition.set_ignition(bench, state=False)
+        except Exception as _cln_err:
+            cleanup_errors.append(_cln_err)
         # 70: FOR (iter;[1, 2])
-        for iter in [1, 2]:
-            # 71. Warte iter
-            timing.wait(bench, seconds=iter)
+        try:
+            for iter in [1, 2]:
+                # 71. Warte iter
+                try:
+                    timing.wait(bench, seconds=iter)
+                except Exception as _cln_err:
+                    cleanup_errors.append(_cln_err)
+        except Exception as _cln_err:
+            cleanup_errors.append(_cln_err)
         # 80. Zündung an
-        ignition.set_ignition(bench, state=True)
+        try:
+            ignition.set_ignition(bench, state=True)
+        except Exception as _cln_err:
+            cleanup_errors.append(_cln_err)
         # 90. FSP BCM1 löschen
-        diagnostic.clear_fault_memory(bench, ecu='BCM1')
+        try:
+            diagnostic.clear_fault_memory(bench, ecu='BCM1')
+        except Exception as _cln_err:
+            cleanup_errors.append(_cln_err)
         # 100. Zündung aus
-        ignition.set_ignition(bench, state=False)
+        try:
+            ignition.set_ignition(bench, state=False)
+        except Exception as _cln_err:
+            cleanup_errors.append(_cln_err)
+        if cleanup_errors:
+            if len(cleanup_errors) == 1:
+                raise cleanup_errors[0]
+            raise ExceptionGroup("Multiple errors during cleanup", cleanup_errors)
     return TestResult('TC_03_DIAGNOSTIC_POWERCYCLE', "PASS")
 
 RUNNERS = {

@@ -34,21 +34,22 @@ def run_tc_12_bms_signal_tolerances_and_ranges(bench):
     140. Zündung aus
     ========================================================================
     """
-    # --- Precondition ---
-    # 10. Zündung an
-    ignition.set_ignition(bench, state=True)
-    # 20. CAN-Signal Clamp15Status auf 1 setzen
-    can.set_can_signal(bench, signal='Clamp15Status', value=Decimal('1'))
-    # 30. CAN-Signal CellVoltageMax auf 4.20 V setzen
-    can.set_can_signal(bench, signal='CellVoltageMax', value=Decimal('4.2'))
-    # 40. CAN-Signal CellTempMax auf 45 °C setzen
-    can.set_can_signal(bench, signal='CellTempMax', value=Decimal('45'))
-    # 50. CAN-Signal PackCurrent auf -80 A setzen
-    can.set_can_signal(bench, signal='PackCurrent', value=Decimal('-80'))
-    # 60. CAN-Signal IsolationResistance auf 1200 kOhm setzen
-    can.set_can_signal(bench, signal='IsolationResistance', value=Decimal('1200'))
-
+    cleanup_errors = []
     try:
+        # --- Precondition ---
+        # 10. Zündung an
+        ignition.set_ignition(bench, state=True)
+        # 20. CAN-Signal Clamp15Status auf 1 setzen
+        can.set_can_signal(bench, signal='Clamp15Status', value=Decimal('1'))
+        # 30. CAN-Signal CellVoltageMax auf 4.20 V setzen
+        can.set_can_signal(bench, signal='CellVoltageMax', value=Decimal('4.2'))
+        # 40. CAN-Signal CellTempMax auf 45 °C setzen
+        can.set_can_signal(bench, signal='CellTempMax', value=Decimal('45'))
+        # 50. CAN-Signal PackCurrent auf -80 A setzen
+        can.set_can_signal(bench, signal='PackCurrent', value=Decimal('-80'))
+        # 60. CAN-Signal IsolationResistance auf 1200 kOhm setzen
+        can.set_can_signal(bench, signal='IsolationResistance', value=Decimal('1200'))
+
         # --- Action & Expected Result ---
         # 70. CAN-Signal CellVoltageMax auf 4.22 V setzen
         can.set_can_signal(bench, signal='CellVoltageMax', value=Decimal('4.22'))
@@ -73,13 +74,29 @@ def run_tc_12_bms_signal_tolerances_and_ranges(bench):
     finally:
         # --- Postcondition (Cleanup) ---
         # 110. CAN-Signal CellVoltageMax auf 3.70 V setzen
-        can.set_can_signal(bench, signal='CellVoltageMax', value=Decimal('3.7'))
+        try:
+            can.set_can_signal(bench, signal='CellVoltageMax', value=Decimal('3.7'))
+        except Exception as _cln_err:
+            cleanup_errors.append(_cln_err)
         # 120. CAN-Signal PackCurrent auf 0 A setzen
-        can.set_can_signal(bench, signal='PackCurrent', value=Decimal('0'))
+        try:
+            can.set_can_signal(bench, signal='PackCurrent', value=Decimal('0'))
+        except Exception as _cln_err:
+            cleanup_errors.append(_cln_err)
         # 130. CAN-Signal Clamp15Status auf 0 setzen
-        can.set_can_signal(bench, signal='Clamp15Status', value=Decimal('0'))
+        try:
+            can.set_can_signal(bench, signal='Clamp15Status', value=Decimal('0'))
+        except Exception as _cln_err:
+            cleanup_errors.append(_cln_err)
         # 140. Zündung aus
-        ignition.set_ignition(bench, state=False)
+        try:
+            ignition.set_ignition(bench, state=False)
+        except Exception as _cln_err:
+            cleanup_errors.append(_cln_err)
+        if cleanup_errors:
+            if len(cleanup_errors) == 1:
+                raise cleanup_errors[0]
+            raise ExceptionGroup("Multiple errors during cleanup", cleanup_errors)
     return TestResult('TC_12_BMS_SIGNAL_TOLERANCES_AND_RANGES', "PASS")
 
 RUNNERS = {

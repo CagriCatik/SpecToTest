@@ -46,7 +46,17 @@ def execute(run, bench):
         duration = time.perf_counter() - start_time
         records = list(getattr(bench, 'log_entries', []))
         test_id = getattr(run, 'test_id', getattr(run, '__name__', 'TEST'))
-        return TestResult(test_id=test_id, result='ERROR', error=error, duration=duration, records=records, specification=spec_doc)
+        primary_err = error
+        cleanup_errs = []
+        if isinstance(error, ExceptionGroup) and error.message == "Multiple errors during cleanup":
+            cleanup_errs = list(error.exceptions)
+            if error.__context__ is not None:
+                primary_err = error.__context__
+        elif error.__context__ is not None:
+            primary_err = error.__context__
+            cleanup_errs = [error]
+        return TestResult(test_id=test_id, result='ERROR', error=primary_err, cleanup_errors=cleanup_errs,
+                          duration=duration, records=records, specification=spec_doc)
 
 
 def write_junit_xml(logs, output_path: Path):
@@ -81,7 +91,26 @@ def write_junit_xml(logs, output_path: Path):
     tree.write(str(output_path), encoding='utf-8', xml_declaration=True)
 
 
-def run_main(*pos_args, argv=None):
+BENCH_FACTORIES = {
+    'dummy': DummyBench,
+    'vector': VectorDummyBench,
+    'controldesk': ControlDeskDummyBench,
+}
+
+
+def register_bench_factory(name: str, factory):
+    """Register an injectable bench factory for runtime execution."""
+    BENCH_FACTORIES[name] = factory
+
+
+def get_bench_factory(name: str):
+    """Retrieve registered bench factory by name."""
+    if name not in BENCH_FACTORIES:
+        raise ValueError(f'unknown bench factory {name!r}; available: {sorted(BENCH_FACTORIES)}')
+    return BENCH_FACTORIES[name]
+
+
+def run_main(*pos_args, argv=None, bench_factory=None):
     """CLI runner invoked by generated test script __main__."""
     if len(pos_args) == 1:
         runners = pos_args[0]
@@ -108,15 +137,12 @@ def run_main(*pos_args, argv=None):
         print(f'SETUP FAILED: {error}', file=sys.stderr)
         return 3
 
-    bench_factories = {
-        'dummy': DummyBench,
-        'vector': VectorDummyBench,
-        'controldesk': ControlDeskDummyBench,
-    }
-    bench_cls = bench_factories[args.bench_type]
+    factory = bench_factory if bench_factory is not None else get_bench_factory(args.bench_type)
+    sample_bench = factory(config)
+    bench_label = getattr(sample_bench, 'BENCH_NAME', f'{args.bench_type} (Simulation)')
 
     ids = (args.test_id,) if args.test_id else tuple(runners)
-    logs = [execute(runners[test_id], bench_cls(config)) for test_id in ids]
+    logs = [execute(runners[test_id], factory(config)) for test_id in ids]
     report_dict = {'results': [r.report() for r in logs]}
     if profile_id:
         report_dict['profile_id'] = profile.profile_id
@@ -127,7 +153,7 @@ def run_main(*pos_args, argv=None):
 
     if args.html_report:
         from .html_report import generate_html_report
-        generate_html_report(logs, Path(args.html_report), bench_type=args.bench_type)
+        generate_html_report(logs, Path(args.html_report), bench_type=bench_label)
 
     results = {log.result for log in logs}
     return 2 if 'ERROR' in results else 1 if 'FAIL' in results else 0

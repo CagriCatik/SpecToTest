@@ -94,6 +94,46 @@ def _render_statement(stmt, aliases, indent='    '):
     return lines
 
 
+def _render_cleanup_statement(stmt, aliases, indent='        '):
+    lines = []
+    if isinstance(stmt, Step):
+        step_lbl = f'{stmt.test_step}. ' if stmt.test_step is not None else ''
+        lines.append(f'{indent}# {step_lbl}{stmt.description}')
+        lines.append(f'{indent}try:')
+        lines.append(f'{indent}    {_call(stmt, aliases[stmt.contract.function.__module__])}')
+        lines.append(f'{indent}except Exception as _cln_err:')
+        lines.append(f'{indent}    cleanup_errors.append(_cln_err)')
+    elif isinstance(stmt, Loop):
+        items_rendered = '[' + ', '.join(literal(x) for x in stmt.items) + ']'
+        step_lbl = f'{stmt.step_label}: ' if stmt.step_label is not None else ''
+        lines.append(f'{indent}# {step_lbl}FOR ({stmt.variable};{items_rendered})')
+        lines.append(f'{indent}try:')
+        lines.append(f'{indent}    for {stmt.variable} in {items_rendered}:')
+        body_indent = indent + '        '
+        for body_item in stmt.body:
+            if isinstance(body_item, Step):
+                s_lbl = f'{body_item.test_step}. ' if body_item.test_step is not None else ''
+                lines.append(f'{body_indent}# {s_lbl}{body_item.description}')
+                lines.append(f'{body_indent}try:')
+                lines.append(f'{body_indent}    {_call(body_item, aliases[body_item.contract.function.__module__])}')
+                lines.append(f'{body_indent}except Exception as _cln_err:')
+                lines.append(f'{body_indent}    cleanup_errors.append(_cln_err)')
+            elif isinstance(body_item, BreakStatement):
+                b_lbl = f'{body_item.step_label}: ' if body_item.step_label is not None else ''
+                if body_item.condition is not None:
+                    lines.append(f'{body_indent}# {b_lbl}BREAK ({body_item.condition.render()})')
+                    lines.append(f'{body_indent}if {body_item.condition.render()}:')
+                    lines.append(f'{body_indent}    break')
+                else:
+                    lines.append(f'{body_indent}# {b_lbl}BREAK')
+                    lines.append(f'{body_indent}break')
+            elif isinstance(body_item, Loop):
+                lines.extend(_render_cleanup_statement(body_item, aliases, indent=body_indent))
+        lines.append(f'{indent}except Exception as _cln_err:')
+        lines.append(f'{indent}    cleanup_errors.append(_cln_err)')
+    return lines
+
+
 def _format_spec_docstring(case):
     if case.raw_spec and case.raw_spec.strip():
         return case.raw_spec.strip()
@@ -188,29 +228,37 @@ def render_python(cases, registry, runner_module='tcg.runtime.runner'):
         actions = [s for s in case.steps if getattr(s, 'phase', None) in ('ACTION', 'EXPECTED')]
         cleanups = [s for s in case.steps if getattr(s, 'phase', None) == 'CLEANUP']
 
-        if preconds:
-            lines.append('    # --- Precondition ---')
-            for s in preconds:
-                lines.extend(_render_statement(s, aliases, indent='    '))
-
         if cleanups:
-            if preconds:
-                lines.append('')
+            lines.append('    cleanup_errors = []')
             lines.append('    try:')
+            if preconds:
+                lines.append('        # --- Precondition ---')
+                for s in preconds:
+                    lines.extend(_render_statement(s, aliases, indent='        '))
+                if actions:
+                    lines.append('')
             if actions:
                 lines.append('        # --- Action & Expected Result ---')
                 for s in actions:
                     lines.extend(_render_statement(s, aliases, indent='        '))
-            else:
+            elif not preconds:
                 lines.append('        pass')
             lines.append('    finally:')
             lines.append('        # --- Postcondition (Cleanup) ---')
             for s in cleanups:
-                lines.extend(_render_statement(s, aliases, indent='        '))
+                lines.extend(_render_cleanup_statement(s, aliases, indent='        '))
+            lines.append('        if cleanup_errors:')
+            lines.append('            if len(cleanup_errors) == 1:')
+            lines.append('                raise cleanup_errors[0]')
+            lines.append('            raise ExceptionGroup("Multiple errors during cleanup", cleanup_errors)')
         else:
-            if actions:
-                if preconds:
+            if preconds:
+                lines.append('    # --- Precondition ---')
+                for s in preconds:
+                    lines.extend(_render_statement(s, aliases, indent='    '))
+                if actions:
                     lines.append('')
+            if actions:
                 lines.append('    # --- Action & Expected Result ---')
                 for s in actions:
                     lines.extend(_render_statement(s, aliases, indent='    '))

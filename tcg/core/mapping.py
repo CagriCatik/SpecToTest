@@ -125,14 +125,63 @@ def load_mappings(entries, registry, source='mapping.toml'):
     return tuple(mappings)
 
 
-def load_mapping(path, registry):
-    if path.suffix.lower() != '.toml':
-        raise SpecError(f'{path.name}: operation mapping must be a .toml file')
-    try:
-        text = path.read_text(encoding='utf-8-sig')
-    except OSError as error:
-        raise SpecError(f'{path.name}: cannot read mapping ({error.strerror})') from None
-    return load_mappings(parse_mapping_document(text, path.name), registry, path.name)
+def load_mapping_files(paths, registry):
+    """Load one or more TOML mapping files and ensure globally unique mapping IDs."""
+    from pathlib import Path
+    if isinstance(paths, (str, Path)):
+        paths = [Path(paths)]
+    paths = [Path(p) for p in paths]
+    all_mappings = []
+    identifiers = {}
+    problems = []
+
+    for path in paths:
+        if path.suffix.lower() != '.toml':
+            problems.append(f'{path.name}: operation mapping must be a .toml file')
+            continue
+        try:
+            text = path.read_text(encoding='utf-8-sig')
+        except OSError as error:
+            problems.append(f'{path.name}: cannot read mapping ({error.strerror})')
+            continue
+        try:
+            entries = parse_mapping_document(text, path.name)
+        except SpecError as error:
+            problems.extend(error.problems)
+            continue
+
+        for index, data in enumerate(entries, 1):
+            where = f'{path.name}:mapping[{index}]'
+            try:
+                ident = single_line_text(data['id'], f'{where}.id')
+                template = single_line_text(data['template'], f'{where}.template')
+                operation = single_line_text(data['operation'], f'{where}.operation')
+                if not MAPPING_ID.fullmatch(ident):
+                    raise SpecError(f'{where}: id {ident!r} must match {MAPPING_ID.pattern}')
+                if ident in identifiers:
+                    first_where = identifiers[ident]
+                    raise SpecError(f'{where}: duplicate mapping id {ident!r} (already defined in {first_where})')
+                identifiers[ident] = where
+                if operation not in registry:
+                    raise SpecError(f'{where}: unknown operation {operation!r}; registered: '
+                                    f'{", ".join(sorted(registry))}')
+                literals, placeholders = _template(template, where)
+                parameters = _bindings(data['parameters'], placeholders, registry[operation], where)
+                all_mappings.append(Mapping(ident, template, registry[operation], literals,
+                                            placeholders, parameters, index))
+            except SpecError as error:
+                problems.extend(error.problems)
+
+    if problems:
+        raise SpecError(problems)
+
+    # Sort mappings by id for deterministic evaluation order across mapping file permutations
+    return tuple(sorted(all_mappings, key=lambda m: m.id))
+
+
+def load_mapping(path_or_paths, registry):
+    """Backwards-compatible loader accepting a single Path or iterable of Paths."""
+    return load_mapping_files(path_or_paths, registry)
 
 
 def _splits(text, mapping):

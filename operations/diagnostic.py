@@ -5,16 +5,31 @@ from tcg.runtime import CheckFailed
 def clear_fault_memory(bench, *, ecu: str):
     """Löscht den Fehlerspeicher des angegebenen Steuergeräts (z.B. BCM1)."""
     bench.clear_fault_memory(ecu)
+    if hasattr(bench, '_last_fault_memory') and ecu in bench._last_fault_memory:
+        bench._last_fault_memory[ecu] = []
 
 
 def read_fault_memory(bench, *, ecu: str):
-    """Liest den Fehlerspeicher des angegebenen Steuergeräts."""
-    bench.read_fault_memory(ecu)
+    """Liest den Fehlerspeicher des angegebenen Steuergeräts und speichert die Diagnosebeobachtung."""
+    entries = bench.read_fault_memory(ecu)
+    if hasattr(bench, '_last_fault_memory'):
+        bench._last_fault_memory[ecu] = list(entries)
+    else:
+        bench._last_fault_memory = {ecu: list(entries)}
+    return entries
 
 
 def expect_fault_memory_entry(bench, *, code: str, ecu: str = 'BCM1'):
-    """Prüft, ob ein bestimmter Fehlercode im Fehlerspeicher eingetragen ist."""
-    entries = bench.read_fault_memory(ecu)
+    """Prüft, ob ein bestimmter Fehlercode im Fehlerspeicher eingetragen ist.
+
+    Bewertet die gespeicherte Diagnosebeobachtung der zugehörigen Leseaktion
+    (falls vorhanden), andernfalls erfolgt eine direkte Abfrage des Prüfstands.
+    """
+    last_reads = getattr(bench, '_last_fault_memory', None)
+    if last_reads is not None and ecu in last_reads:
+        entries = last_reads[ecu]
+    else:
+        entries = bench.read_fault_memory(ecu)
     if code not in entries:
         raise CheckFailed(f'Fehlerspeicher {ecu}: Fehlercode {code!r} nicht gefunden (aktuelle Einträge: {entries})')
 

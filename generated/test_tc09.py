@@ -43,27 +43,28 @@ def run_tc_09_bms_cell_overvoltage_derating(bench):
     230. Zündung aus
     ========================================================================
     """
-    # --- Precondition ---
-    # 10. Zündung an
-    ignition.set_ignition(bench, state=True)
-    # 20. CAN-Signal Clamp15Status auf 1 setzen
-    can.set_can_signal(bench, signal='Clamp15Status', value=Decimal('1'))
-    # 30. CAN-Signal BMSState auf 4 setzen
-    can.set_can_signal(bench, signal='BMSState', value=Decimal('4'))
-    # 40. CAN-Signal PackSOC auf 85 % setzen
-    can.set_can_signal(bench, signal='PackSOC', value=Decimal('85'))
-    # 50. CAN-Signal MaxChargeCurrent auf 120 A setzen
-    can.set_can_signal(bench, signal='MaxChargeCurrent', value=Decimal('120'))
-    # 60. CAN-Signal CellVoltageMax auf 4.10 V setzen
-    can.set_can_signal(bench, signal='CellVoltageMax', value=Decimal('4.1'))
-    # 70. CAN-Signal HVMainPosContactState auf 1 setzen
-    can.set_can_signal(bench, signal='HVMainPosContactState', value=Decimal('1'))
-    # 80. CAN-Signal HVMainNegContactState auf 1 setzen
-    can.set_can_signal(bench, signal='HVMainNegContactState', value=Decimal('1'))
-    # 90. Fehlerspeicher BMS löschen
-    diagnostic.clear_fault_memory(bench, ecu='BMS')
-
+    cleanup_errors = []
     try:
+        # --- Precondition ---
+        # 10. Zündung an
+        ignition.set_ignition(bench, state=True)
+        # 20. CAN-Signal Clamp15Status auf 1 setzen
+        can.set_can_signal(bench, signal='Clamp15Status', value=Decimal('1'))
+        # 30. CAN-Signal BMSState auf 4 setzen
+        can.set_can_signal(bench, signal='BMSState', value=Decimal('4'))
+        # 40. CAN-Signal PackSOC auf 85 % setzen
+        can.set_can_signal(bench, signal='PackSOC', value=Decimal('85'))
+        # 50. CAN-Signal MaxChargeCurrent auf 120 A setzen
+        can.set_can_signal(bench, signal='MaxChargeCurrent', value=Decimal('120'))
+        # 60. CAN-Signal CellVoltageMax auf 4.10 V setzen
+        can.set_can_signal(bench, signal='CellVoltageMax', value=Decimal('4.1'))
+        # 70. CAN-Signal HVMainPosContactState auf 1 setzen
+        can.set_can_signal(bench, signal='HVMainPosContactState', value=Decimal('1'))
+        # 80. CAN-Signal HVMainNegContactState auf 1 setzen
+        can.set_can_signal(bench, signal='HVMainNegContactState', value=Decimal('1'))
+        # 90. Fehlerspeicher BMS löschen
+        diagnostic.clear_fault_memory(bench, ecu='BMS')
+
         # --- Action & Expected Result ---
         # 100. CAN-Signal CellVoltageMax auf 4.20 V setzen
         can.set_can_signal(bench, signal='CellVoltageMax', value=Decimal('4.2'))
@@ -92,19 +93,44 @@ def run_tc_09_bms_cell_overvoltage_derating(bench):
     finally:
         # --- Postcondition (Cleanup) ---
         # 170. CAN-Signal CellVoltageMax auf 3.70 V setzen
-        can.set_can_signal(bench, signal='CellVoltageMax', value=Decimal('3.7'))
+        try:
+            can.set_can_signal(bench, signal='CellVoltageMax', value=Decimal('3.7'))
+        except Exception as _cln_err:
+            cleanup_errors.append(_cln_err)
         # 180. CAN-Signal MaxChargeCurrent auf 0 A setzen
-        can.set_can_signal(bench, signal='MaxChargeCurrent', value=Decimal('0'))
+        try:
+            can.set_can_signal(bench, signal='MaxChargeCurrent', value=Decimal('0'))
+        except Exception as _cln_err:
+            cleanup_errors.append(_cln_err)
         # 190. CAN-Signal HVMainPosContactState auf 0 setzen
-        can.set_can_signal(bench, signal='HVMainPosContactState', value=Decimal('0'))
+        try:
+            can.set_can_signal(bench, signal='HVMainPosContactState', value=Decimal('0'))
+        except Exception as _cln_err:
+            cleanup_errors.append(_cln_err)
         # 200. CAN-Signal BMSState auf 1 setzen
-        can.set_can_signal(bench, signal='BMSState', value=Decimal('1'))
+        try:
+            can.set_can_signal(bench, signal='BMSState', value=Decimal('1'))
+        except Exception as _cln_err:
+            cleanup_errors.append(_cln_err)
         # 210. Fehlerspeicher BMS löschen
-        diagnostic.clear_fault_memory(bench, ecu='BMS')
+        try:
+            diagnostic.clear_fault_memory(bench, ecu='BMS')
+        except Exception as _cln_err:
+            cleanup_errors.append(_cln_err)
         # 220. CAN-Signal Clamp15Status auf 0 setzen
-        can.set_can_signal(bench, signal='Clamp15Status', value=Decimal('0'))
+        try:
+            can.set_can_signal(bench, signal='Clamp15Status', value=Decimal('0'))
+        except Exception as _cln_err:
+            cleanup_errors.append(_cln_err)
         # 230. Zündung aus
-        ignition.set_ignition(bench, state=False)
+        try:
+            ignition.set_ignition(bench, state=False)
+        except Exception as _cln_err:
+            cleanup_errors.append(_cln_err)
+        if cleanup_errors:
+            if len(cleanup_errors) == 1:
+                raise cleanup_errors[0]
+            raise ExceptionGroup("Multiple errors during cleanup", cleanup_errors)
     return TestResult('TC_09_BMS_CELL_OVERVOLTAGE_DERATING', "PASS")
 
 RUNNERS = {

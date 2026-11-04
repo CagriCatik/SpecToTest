@@ -26,15 +26,16 @@ def run_tc_04_parameter_limits_sweep(bench):
     100. Bildschirm HOME auswählen
     ========================================================================
     """
-    # --- Precondition ---
-    # 10. Bildschirm HOME auswählen
-    hmi.select_screen(bench, screen='HOME')
-    # 20. Parameter LIMIT auf 0 schreiben
-    hmi.write_parameter(bench, parameter='LIMIT', value=Decimal('0'))
-    # 30. Parameter GAIN auf 0 schreiben
-    hmi.write_parameter(bench, parameter='GAIN', value=Decimal('0'))
-
+    cleanup_errors = []
     try:
+        # --- Precondition ---
+        # 10. Bildschirm HOME auswählen
+        hmi.select_screen(bench, screen='HOME')
+        # 20. Parameter LIMIT auf 0 schreiben
+        hmi.write_parameter(bench, parameter='LIMIT', value=Decimal('0'))
+        # 30. Parameter GAIN auf 0 schreiben
+        hmi.write_parameter(bench, parameter='GAIN', value=Decimal('0'))
+
         # --- Action & Expected Result ---
         # 40. Parameter LIMIT auf 50 schreiben
         hmi.write_parameter(bench, parameter='LIMIT', value=Decimal('50'))
@@ -58,11 +59,24 @@ def run_tc_04_parameter_limits_sweep(bench):
     finally:
         # --- Postcondition (Cleanup) ---
         # 80. Parameter LIMIT auf 0 schreiben
-        hmi.write_parameter(bench, parameter='LIMIT', value=Decimal('0'))
+        try:
+            hmi.write_parameter(bench, parameter='LIMIT', value=Decimal('0'))
+        except Exception as _cln_err:
+            cleanup_errors.append(_cln_err)
         # 90. Parameter GAIN auf 0 schreiben
-        hmi.write_parameter(bench, parameter='GAIN', value=Decimal('0'))
+        try:
+            hmi.write_parameter(bench, parameter='GAIN', value=Decimal('0'))
+        except Exception as _cln_err:
+            cleanup_errors.append(_cln_err)
         # 100. Bildschirm HOME auswählen
-        hmi.select_screen(bench, screen='HOME')
+        try:
+            hmi.select_screen(bench, screen='HOME')
+        except Exception as _cln_err:
+            cleanup_errors.append(_cln_err)
+        if cleanup_errors:
+            if len(cleanup_errors) == 1:
+                raise cleanup_errors[0]
+            raise ExceptionGroup("Multiple errors during cleanup", cleanup_errors)
     return TestResult('TC_04_PARAMETER_LIMITS_SWEEP', "PASS")
 
 RUNNERS = {

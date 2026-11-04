@@ -1,5 +1,6 @@
 """Tolerant whitespace handling for the deterministic TXT test specification language."""
 from decimal import Decimal
+from pathlib import Path
 import re
 
 from tcg.core.model import BinaryCondition, SpecError, VariableRef
@@ -38,8 +39,9 @@ BREAK_CMD = re.compile(r'^(?:([0-9]+)[.:]\s*)?BREAK(?:\s*\(\s*(.+?)\s*\))?$', re
 GENERAL_CMD = re.compile(r'^(?:([0-9]+)[.:]\s*)?(.+)$')
 
 
-def _error(path, line, message):
-    raise SpecError(f'{path.name}:{line}: {message}')
+def _error(source, line, message):
+    name = Path(source).name if isinstance(source, (str, Path)) else str(source)
+    raise SpecError(f'{name}:{line}: {message}')
 
 
 def _strip_inline_comment(line):
@@ -108,14 +110,11 @@ def _field(line, prefix, path, line_number):
     return value
 
 
-def read_text_spec(path):
-    """Parse one or more test cases supporting sections, loops and conditions."""
-    try:
-        raw_lines = path.read_text(encoding='utf-8-sig').splitlines()
-    except UnicodeDecodeError as error:
-        raise SpecError(f'{path.name}: must be UTF-8 text ({error})') from None
-    except OSError as error:
-        raise SpecError(f'{path.name}: cannot read specification ({error.strerror})') from None
+def parse_text_lines(raw_lines, source_name='test_spec.txt'):
+    """Parse raw lines of specification text into structured sections."""
+    source_path = Path(source_name)
+    source_stem = source_path.stem
+    source_file = source_path.name
 
     sections = {name: [] for name in SPEC_SECTIONS}
     case = None
@@ -124,6 +123,7 @@ def read_text_spec(path):
     loop_stack = []
     sequence = {'Vorbedingungen': 0, 'Nachbedingungen': 0}
     in_block_comment = False
+    in_html_comment = False
 
     def add_metadata():
         if case and not case['stored']:
@@ -139,7 +139,7 @@ def read_text_spec(path):
         if case is None:
             return
         if loop_stack:
-            _error(path, line_number, f'{case["id"]}: unclosed FOR loop')
+            _error(source_file, line_number, f'{case["id"]}: unclosed FOR loop')
         add_metadata()
         case = None
         current_section = None
@@ -147,10 +147,10 @@ def read_text_spec(path):
     def ensure_case(line_number):
         nonlocal case, state
         if case is None:
-            raw_stem = path.stem.upper()
+            raw_stem = source_stem.upper()
             stem_id = re.sub(r'[^A-Z0-9_]', '_', raw_stem)
             case_id = stem_id if stem_id.startswith('TC_') else f'TC_{stem_id}'
-            case = {'id': case_id, 'line': line_number, 'name': path.stem,
+            case = {'id': case_id, 'line': line_number, 'name': source_stem,
                     'objective': None, 'stored': False}
             add_metadata()
             state = 'SECTION_BODY'
@@ -173,14 +173,59 @@ def read_text_spec(path):
                 in_block_comment = True
                 continue
 
-        line = _strip_inline_comment(line)
-        if not line or line.startswith('//'):
+        # Handle multi-line HTML comments <!-- ... --> (Markdown)
+        if in_html_comment:
+            if '-->' in line:
+                in_html_comment = False
+                line = line.partition('-->')[2].strip()
+            else:
+                continue
+
+        if line.startswith('<!--'):
+            if '-->' in line:
+                line = line.partition('-->')[2].strip()
+            else:
+                in_html_comment = True
+                continue
+
+        # Skip markdown code fence markers and thematic breaks
+        if line.startswith('```') or line in ('---', '***', '___'):
             continue
+
+        # Handle Markdown headings (# Precondition, ## Action, # TESTFALL: ...)
+        is_md_heading = False
+        if line.startswith('#'):
+            candidate = line.lstrip('#').strip()
+            match_cand = re.match(r'^\*{0,2}(TESTFALL|NAME|TESTZIEL)\*{0,2}:\*{0,2}\s*(.+)$', candidate, re.IGNORECASE)
+            if match_cand:
+                field = match_cand.group(1).upper()
+                val = match_cand.group(2).strip().strip('*').strip()
+                line = f'{field}: {val}'
+                is_md_heading = True
+            elif SECTION_HEADING.match(candidate):
+                line = candidate
+                is_md_heading = True
+
+        if not is_md_heading:
+            line = _strip_inline_comment(line)
+            if not line or line.startswith('//'):
+                continue
+
+        # Handle Markdown list bullets: - or *
+        if line.startswith(('- ', '* ')):
+            line = line[2:].strip()
+
+        # Normalize markdown bold on header metadata: **TESTFALL:** -> TESTFALL:
+        match_hdr = re.match(r'^\*{0,2}(TESTFALL|NAME|TESTZIEL)\*{0,2}:\*{0,2}\s*(.+)$', line, re.IGNORECASE)
+        if match_hdr:
+            field = match_hdr.group(1).upper()
+            val = match_hdr.group(2).strip().strip('*').strip()
+            line = f'{field}: {val}'
 
         if line.startswith('TESTFALL:'):
             if case is not None:
                 close_case(line_number)
-            test_id = _field(line, 'TESTFALL:', path, line_number)
+            test_id = _field(line, 'TESTFALL:', source_file, line_number)
             case = {'id': test_id, 'line': line_number, 'name': None,
                     'objective': None, 'stored': False}
             sequence = {'Vorbedingungen': 0, 'Nachbedingungen': 0}
@@ -190,13 +235,13 @@ def read_text_spec(path):
             continue
 
         if state == 'NAME':
-            case['name'] = _field(line, 'NAME:', path, line_number)
+            case['name'] = _field(line, 'NAME:', source_file, line_number)
             state = 'OPTIONAL_OBJECTIVE'
             continue
 
         if state == 'OPTIONAL_OBJECTIVE':
             if line.startswith('TESTZIEL:'):
-                case['objective'] = _field(line, 'TESTZIEL:', path, line_number)
+                case['objective'] = _field(line, 'TESTZIEL:', source_file, line_number)
                 state = 'EXPECTING_SECTION'
                 continue
             state = 'EXPECTING_SECTION'
@@ -204,7 +249,7 @@ def read_text_spec(path):
         match_section = SECTION_HEADING.match(line)
         if match_section:
             if loop_stack:
-                _error(path, line_number, f'unclosed FOR loop before section {line!r}')
+                _error(source_file, line_number, f'unclosed FOR loop before section {line!r}')
             ensure_case(line_number)
             sec_name = match_section.group(1).lower().rstrip(':')
             current_section = SECTION_MAP[sec_name]
@@ -215,14 +260,14 @@ def read_text_spec(path):
             ensure_case(line_number)
 
         if current_section is None:
-            _error(path, line_number, f"unexpected content {line!r}; expected section heading (e.g. 'Precondition', 'Action', 'Postcondition')")
+            _error(source_file, line_number, f"unexpected content {line!r}; expected section heading (e.g. 'Precondition', 'Action', 'Postcondition')")
 
         # Parse FOR loop
         match_for = FOR_LOOP.match(line)
         if match_for:
             step_num = int(match_for[1]) if match_for[1] else None
             var_name = match_for[2]
-            items = _parse_items(match_for[3], path, line_number)
+            items = _parse_items(match_for[3], source_file, line_number)
             loop_data = {
                 'Test_ID': case['id'],
                 'Schritt': step_num,
@@ -240,7 +285,7 @@ def read_text_spec(path):
         match_end = END_FOR.match(line)
         if match_end:
             if not loop_stack:
-                _error(path, line_number, 'unexpected END FOR without active FOR loop')
+                _error(source_file, line_number, 'unexpected END FOR without active FOR loop')
             loop_stack.pop()
             continue
 
@@ -248,9 +293,9 @@ def read_text_spec(path):
         match_break = BREAK_CMD.match(line)
         if match_break:
             if not loop_stack:
-                _error(path, line_number, 'BREAK statement occurs outside of any FOR loop')
+                _error(source_file, line_number, 'BREAK statement occurs outside of any FOR loop')
             step_num = int(match_break[1]) if match_break[1] else None
-            cond = _parse_condition(match_break[2], path, line_number) if match_break[2] else None
+            cond = _parse_condition(match_break[2], source_file, line_number) if match_break[2] else None
             break_data = {
                 'Test_ID': case['id'],
                 'Schritt': step_num,
@@ -279,23 +324,29 @@ def read_text_spec(path):
             target.append((line_number, cmd_data))
             continue
 
-        _error(path, line_number, f'unrecognized specification statement: {line!r}')
+        _error(source_file, line_number, f'unrecognized specification statement: {line!r}')
 
     if case is None and not sections['Testfaelle']:
-        raise SpecError(f'{path.name}: no test cases')
+        raise SpecError(f'{source_file}: no test cases')
     close_case(len(raw_lines) or 1)
     return sections
 
 
-def parse_text_spec(text, name='test_spec.txt'):
-    import tempfile
-    with tempfile.NamedTemporaryFile('w', encoding='utf-8', suffix='.txt', delete=False) as f:
-        f.write(text)
-        tmp_path = Path(f.name)
+def read_text_spec(path):
+    """Parse one or more test cases supporting sections, loops and conditions from a file."""
+    path = Path(path)
     try:
-        return read_text_spec(tmp_path)
-    finally:
-        tmp_path.unlink(missing_ok=True)
+        raw_lines = path.read_text(encoding='utf-8-sig').splitlines()
+    except UnicodeDecodeError as error:
+        raise SpecError(f'{path.name}: must be UTF-8 text ({error})') from None
+    except OSError as error:
+        raise SpecError(f'{path.name}: cannot read specification ({error.strerror})') from None
+    return parse_text_lines(raw_lines, source_name=path.name)
+
+
+def parse_text_spec(text, name='test_spec.txt'):
+    """Parse one or more test cases supporting sections, loops and conditions from a string."""
+    return parse_text_lines(text.splitlines(), source_name=name)
 
 
 class TextSpecificationParser(SpecificationParserPort):
