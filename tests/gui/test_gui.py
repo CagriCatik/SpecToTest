@@ -284,10 +284,13 @@ class GuiWindowWorkspacesIntegrationTests(unittest.TestCase):
         self.assertIsNotNone(win.workspace_specs.current_spec_path)
         self.assertTrue(len(win.workspace_specs.editor.toPlainText()) > 0)
 
-        # Workspace 2: Unified Catalog has operations list and templates table
+        # Workspace 2: Operationskatalog has operations list and templates table
         self.assertTrue(win.workspace_catalog.op_list.count() > 0)
-        self.assertIsNotNone(win.workspace_catalog.btn_generate_sentence)
-        self.assertIsNotNone(win.workspace_catalog.btn_insert_spec)
+        self.assertIsNotNone(win.workspace_catalog.btn_new_mapping)
+        self.assertIsNotNone(win.workspace_catalog.btn_edit_mapping)
+        # Verify sentence generator and insert button do NOT exist in CatalogWorkspace
+        self.assertFalse(hasattr(win.workspace_catalog, 'btn_generate_sentence'))
+        self.assertFalse(hasattr(win.workspace_catalog, 'btn_insert_spec'))
 
         # Switch profile to service pilot
         service_prof = next(p for p in win.builtin_profiles if p.id == "service_pilot")
@@ -298,7 +301,7 @@ class GuiWindowWorkspacesIntegrationTests(unittest.TestCase):
         self.assertEqual(len(win.state.operations), 9)
         self.assertEqual(win.state.profile_config.specs_dir, "examples/service_pilot/inputs/specs")
 
-    def test_vice_versa_sentence_generation_and_insertion(self):
+    def test_operations_catalog_focused_inspection_and_management(self):
         win = MappingStudioWindow()
         catalog = win.workspace_catalog
 
@@ -307,37 +310,18 @@ class GuiWindowWorkspacesIntegrationTests(unittest.TestCase):
         self.assertEqual(catalog.current_op_name, "wait")
         self.assertTrue(catalog.table_templates.rowCount() > 0)
 
-        # Select first template: 'Warte {dauer}'
-        catalog.table_templates.selectRow(0)
+        # Details are updated
+        self.assertIn("wait", catalog.lbl_op_title.text())
+        self.assertIn("Warte {dauer}", catalog.table_templates.item(0, 1).text())
 
-        # Set parameter: 500 ms
-        param_widget = catalog.param_inputs.get("dauer")
-        self.assertIsNotNone(param_widget)
-        # It's a QuantityWidget with spinbox and unit_combo
-        param_widget.spinbox.setValue(500)
-        param_widget.unit_combo.setCurrentText("ms")
+        # Verify buttons for mapping management are present and active
+        self.assertTrue(catalog.btn_new_mapping.isEnabled())
+        self.assertTrue(catalog.btn_edit_mapping.isEnabled())
 
-        # 2. Generate sentence
-        catalog.generate_vice_versa_sentence()
-        generated = catalog.txt_preview_sentence.text().strip()
-        self.assertEqual(generated, "Warte 500 ms")
-
-        # 3. Verify reverse resolution proof
-        ok, op_name, args, err = catalog.verify_generated_sentence(generated)
-        self.assertTrue(ok)
-        self.assertEqual(op_name, "wait")
-        from decimal import Decimal
-        self.assertEqual(args.get("seconds"), Decimal("0.500"))
-
-        # 4. Insert into open specification
-        initial_text = win.workspace_specs.editor.toPlainText()
-        catalog.insert_into_active_specification()
-
-        # Should switch to Spezifikationen tab (index 0) and contain the sentence
-        self.assertEqual(win.tabs.currentIndex(), 0)
-        new_text = win.workspace_specs.editor.toPlainText()
-        self.assertIn("Warte 500 ms", new_text)
-        self.assertTrue(win.workspace_specs.is_spec_dirty)
+        # Verify that catalog does NOT contain parameter inputs or step generation actions
+        self.assertFalse(hasattr(catalog, 'param_inputs'))
+        self.assertFalse(hasattr(catalog, 'lbl_generated_sentence'))
+        self.assertFalse(hasattr(catalog, 'btn_insert_spec'))
 
     def test_specification_dirty_tracking(self):
         win = MappingStudioWindow()
@@ -437,6 +421,26 @@ class GuiWindowWorkspacesIntegrationTests(unittest.TestCase):
 
         assistant.on_insert_clicked()
         self.assertIn(preview_text, specs.editor.toPlainText())
+
+        # 4. Action phase insertion with typed quantity parameter (500 ms)
+        specs.editor.setPlainText("# Test\n## Action\n")
+        specs.editor.moveCursor(specs.editor.textCursor().MoveOperation.End)
+
+        assistant.set_phase("ACTION")
+        idx_wait = assistant.combo_ops.findData("wait")
+        assistant.combo_ops.setCurrentIndex(idx_wait)
+        assistant.on_operation_changed()
+
+        param_widget = assistant.param_widgets.get("dauer")
+        self.assertIsNotNone(param_widget)
+        param_widget.spinbox.setValue(500)
+        param_widget.unit_combo.setCurrentText("ms")
+        assistant.update_preview_from_inputs()
+
+        self.assertEqual(assistant.txt_preview.text().strip(), "Warte 500 ms")
+        self.assertIn("Gültig", assistant.lbl_verify.text())
+        assistant.on_insert_clicked()
+        self.assertIn("Warte 500 ms", specs.editor.toPlainText())
 
     def test_background_analysis_revision_tracking(self):
         win = MappingStudioWindow()

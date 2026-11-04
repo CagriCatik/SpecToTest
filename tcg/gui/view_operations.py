@@ -1,4 +1,4 @@
-"""Operations-to-Mappings view ("Vice Versa") for SpecToTest GUI."""
+"""Operations-to-Mappings view for SpecToTest GUI."""
 from __future__ import annotations
 
 from typing import Callable

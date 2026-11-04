@@ -1,14 +1,12 @@
-"""Unified Operationskatalog Workspace with Vice-Versa Sentence Generator and Mappings Management."""
+"""Operationskatalog Workspace for inspecting operations, contracts, and managing sentence mappings."""
 from __future__ import annotations
 
-import re
-from typing import Any, Callable
+from typing import Callable
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import (
     QComboBox,
-    QDoubleSpinBox,
     QFrame,
     QGroupBox,
     QHBoxLayout,
@@ -23,23 +21,19 @@ from PySide6.QtWidgets import (
     QTabWidget,
     QTableWidget,
     QTableWidgetItem,
-    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
 
 from tcg.gui.dialog_editor import MappingEditorDialog
-from tcg.gui.facade import CompilationFacade
 from tcg.gui.models import MappingItem, MappingStudioState, OperationInfo
 from tcg.gui.view_mappings import MappingsView
-from tcg.gui.widget_smart_param import SmartParamWidget, build_smart_param_widget
 
 
 class CatalogWorkspace(QWidget):
-    """The Operationskatalog workspace with the interactive Vice-Versa generator and mapping management."""
+    """The Operationskatalog workspace for exploring contracts, documentation, and mapping definitions."""
 
     test_sentence_requested = Signal(str)
-    insert_sentence_into_spec = Signal(str)
 
     def __init__(self, state: MappingStudioState, on_change: Callable[[], None], parent: QWidget | None = None):
         super().__init__(parent)
@@ -47,7 +41,6 @@ class CatalogWorkspace(QWidget):
         self.on_change = on_change
         self.current_selected_op: OperationInfo | None = None
         self.current_selected_mapping: MappingItem | None = None
-        self.param_inputs: dict[str, QWidget] = {}
 
         self.setup_ui()
         self.refresh()
@@ -59,9 +52,9 @@ class CatalogWorkspace(QWidget):
 
         self.main_tabs = QTabWidget()
 
-        # Tab 1: Operations-Arbeitsplatz & Satz-Generator (Vice Versa)
-        vice_versa_widget = self.build_vice_versa_tab()
-        self.main_tabs.addTab(vice_versa_widget, "Operationskatalog & Satz-Generator (Vice Versa)")
+        # Tab 1: Operationskatalog (Operationen, Verträge & Satzmuster)
+        ops_widget = self.build_operations_tab()
+        self.main_tabs.addTab(ops_widget, "Operationen & Verträge")
 
         # Tab 2: Globale Mappings-Verwaltung
         self.view_mappings = MappingsView(self.state, on_change=self.on_child_change, parent=self)
@@ -70,7 +63,7 @@ class CatalogWorkspace(QWidget):
 
         layout.addWidget(self.main_tabs)
 
-    def build_vice_versa_tab(self) -> QWidget:
+    def build_operations_tab(self) -> QWidget:
         container = QWidget()
         layout = QHBoxLayout(container)
         layout.setContentsMargins(6, 6, 6, 6)
@@ -102,7 +95,7 @@ class CatalogWorkspace(QWidget):
 
         splitter.addWidget(left_panel)
 
-        # --- RIGHT: Splitter (Contract/Doc | Mappings Table | Vice-Versa Generator) ---
+        # --- RIGHT: Splitter (Contract/Doc | Associated Templates Table) ---
         right_panel = QWidget()
         right_layout = QVBoxLayout(right_panel)
         right_layout.setContentsMargins(0, 0, 0, 0)
@@ -129,7 +122,7 @@ class CatalogWorkspace(QWidget):
 
         right_splitter.addWidget(top_group)
 
-        # 2. Middle Section: Associated Sentence Templates
+        # 2. Bottom Section: Associated Sentence Templates (Mappings)
         mid_group = QGroupBox("Zugeordnete Satzmuster (Mappings)")
         mid_layout = QVBoxLayout(mid_group)
         mid_layout.setSpacing(6)
@@ -161,51 +154,8 @@ class CatalogWorkspace(QWidget):
 
         right_splitter.addWidget(mid_group)
 
-        # 3. Bottom Section: Satzprüfung & Testschritt-Generator
-        bottom_group = QGroupBox("Satzprüfung & Testschritt-Generator (Operation ➔ Schritt)")
-        bottom_layout = QVBoxLayout(bottom_group)
-        bottom_layout.setSpacing(8)
-
-        # Parameter Form container
-        self.form_container = QWidget()
-        self.form_layout = QVBoxLayout(self.form_container)
-        self.form_layout.setContentsMargins(0, 0, 0, 0)
-        bottom_layout.addWidget(self.form_container)
-
-        # Sentence Preview Box
-        bottom_layout.addWidget(QLabel("<b>Erzeugter Spezifikationssatz:</b>"))
-        self.lbl_generated_sentence = QLineEdit()
-        self.lbl_generated_sentence.setFont(QFont("Monospace", 10, QFont.Weight.Bold))
-        bottom_layout.addWidget(self.lbl_generated_sentence)
-
-        # Verification result
-        self.lbl_verify_result = QLabel("")
-        self.lbl_verify_result.setWordWrap(True)
-        bottom_layout.addWidget(self.lbl_verify_result)
-
-        # Actions
-        action_row = QHBoxLayout()
-        self.btn_generate_sentence = QPushButton("Satz erzeugen")
-        self.btn_generate_sentence.clicked.connect(self.generate_vice_versa_sentence)
-        action_row.addWidget(self.btn_generate_sentence)
-
-        self.btn_verify_sentence = QPushButton("Satz prüfen (Gegenprobe)")
-        self.btn_verify_sentence.clicked.connect(lambda: self.verify_generated_sentence())
-        action_row.addWidget(self.btn_verify_sentence)
-
-        self.btn_insert_spec = QPushButton("In Spezifikation einfügen")
-        self.btn_insert_spec.setStyleSheet("background-color: #16a34a; color: white; font-weight: bold; padding: 6px 14px; border-radius: 4px;")
-        self.btn_insert_spec.clicked.connect(self.insert_into_active_specification)
-        action_row.addWidget(self.btn_insert_spec)
-
-        action_row.addStretch()
-        bottom_layout.addLayout(action_row)
-
-        right_splitter.addWidget(bottom_group)
-
         right_splitter.setStretchFactor(0, 1)
         right_splitter.setStretchFactor(1, 2)
-        right_splitter.setStretchFactor(2, 2)
 
         right_layout.addWidget(right_splitter)
         splitter.addWidget(right_panel)
@@ -264,7 +214,6 @@ class CatalogWorkspace(QWidget):
             self.lbl_op_meta.setText("-")
             self.tmpl_table.setRowCount(0)
             self.btn_edit_mapping.setEnabled(False)
-            self.build_parameter_form(None)
             return
 
         status_text = f"Gültig verknüpft ({op.valid_mappings_count} Mapping(s))" if op.is_mapped else "Lücke: Noch kein gültiges Satzmuster verknüpft"
@@ -306,11 +255,9 @@ class CatalogWorkspace(QWidget):
             self.tmpl_table.blockSignals(False)
             self.current_selected_mapping = op.linked_mappings[0]
             self.btn_edit_mapping.setEnabled(True)
-            self.build_parameter_form(self.current_selected_mapping)
         else:
             self.current_selected_mapping = None
             self.btn_edit_mapping.setEnabled(False)
-            self.build_parameter_form(None)
 
     def on_mapping_selected(self):
         if not self.current_selected_op:
@@ -319,7 +266,6 @@ class CatalogWorkspace(QWidget):
         if not selected_rows:
             self.current_selected_mapping = None
             self.btn_edit_mapping.setEnabled(False)
-            self.build_parameter_form(None)
             return
 
         row = selected_rows[0].row()
@@ -327,140 +273,18 @@ class CatalogWorkspace(QWidget):
             mapping = self.current_selected_op.linked_mappings[row]
             self.current_selected_mapping = mapping
             self.btn_edit_mapping.setEnabled(True)
-            self.build_parameter_form(mapping)
-
-    def build_parameter_form(self, mapping: MappingItem | None):
-        """Construct smart input fields for all placeholders of the selected template."""
-        # Clear existing fields
-        while self.form_layout.count():
-            child = self.form_layout.takeAt(0)
-            if child.widget():
-                child.widget().deleteLater()
-
-        self.param_inputs.clear()
-        self.lbl_verify_result.clear()
-
-        if not mapping or not self.current_selected_op:
-            self.lbl_generated_sentence.clear()
-            self.btn_verify_sentence.setEnabled(False)
-            self.btn_insert_spec.setEnabled(False)
-            return
-
-        contract = self.state.registry.get(mapping.operation)
-        placeholders = mapping.placeholders
-
-        if not placeholders:
-            # Static sentence without placeholders (e.g. "Zündung an" or "Dienst neu starten")
-            info_lbl = QLabel(f"Dieses Satzmuster benötigt keine Parameter (statischer Befehl).")
-            info_lbl.setStyleSheet("color: #64748b; font-style: italic;")
-            self.form_layout.addWidget(info_lbl)
-            self.lbl_generated_sentence.setText(mapping.template)
-            self.btn_verify_sentence.setEnabled(True)
-            self.btn_insert_spec.setEnabled(True)
-            return
-
-        # Build dynamic rows for each placeholder
-        for ph in placeholders:
-            target_param_name = mapping.parameters.get(ph)
-            param_spec = contract.parameter(target_param_name) if contract and target_param_name else None
-
-            row_widget = QWidget()
-            row_layout = QHBoxLayout(row_widget)
-            row_layout.setContentsMargins(0, 2, 0, 2)
-            row_layout.setSpacing(8)
-
-            lbl = QLabel(f"{{{ph}}} ({target_param_name or 'unbekannt'}):")
-            lbl.setFont(QFont("Monospace", 9, QFont.Weight.Bold))
-            lbl.setMinimumWidth(140)
-            row_layout.addWidget(lbl)
-
-            smart_widget = self.create_smart_input_for_param(param_spec, ph)
-            row_layout.addWidget(smart_widget.val_widget, stretch=2)
-            if smart_widget.unit_widget:
-                row_layout.addWidget(smart_widget.unit_widget)
-
-            self.form_layout.addWidget(row_widget)
-            self.param_inputs[ph] = smart_widget
-
-        self.btn_verify_sentence.setEnabled(True)
-        self.btn_insert_spec.setEnabled(True)
-        self.update_generated_sentence_preview()
-
-    def create_smart_input_for_param(self, param_spec, ph_name: str) -> SmartParamWidget:
-        """Create field suited to the parameter type (Quantity, Boolean, Resource, Decimal)."""
-        resources = self.state.profile.resources if self.state.profile else {}
-        return build_smart_param_widget(
-            param_spec=param_spec,
-            ph_name=ph_name,
-            profile_resources=resources,
-            on_change=self.update_generated_sentence_preview,
-        )
-
-    def update_generated_sentence_preview(self):
-        """Assemble the complete sentence from current parameter inputs."""
-        if not self.current_selected_mapping:
-            return
-
-        template = self.current_selected_mapping.template
-        for ph, widget in self.param_inputs.items():
-            val = widget.get_value_string()
-            unit = widget.get_unit_string()
-            if unit:
-                val = f"{val} {unit}" if unit in ('s', 'ms', 'rpm', 'km/h', 'Ohm') else f"{val}{unit}"
-
-            template = template.replace(f"{{{ph}}}", str(val))
-
-        self.lbl_generated_sentence.setText(template)
-        self.lbl_verify_result.clear()
-
-    def generate_vice_versa_sentence(self):
-        self.update_generated_sentence_preview()
-
-    def verify_generated_sentence(self, sentence: str | None = None) -> tuple[bool, str | None, dict[str, Any], str | None]:
-        """Perform reverse check: Resolve generated sentence back through the compiler resolver."""
-        if sentence is not None:
-            self.lbl_generated_sentence.setText(sentence)
-        s = self.lbl_generated_sentence.text().strip()
-        if not s:
-            return False, None, {}, "Leerer Satz"
-
-        res = self.state.test_sentence(s)
-        if res['success'] and res['matched']:
-            op_name = res['operation']
-            args = res['arguments']
-            args_str = ", ".join(f"{k}={v!r}" for k, v in args.items())
-            call_code = f"{op_name}(bench, {args_str})"
-
-            is_target_op = (self.current_selected_op and op_name == self.current_selected_op.name)
-            if is_target_op:
-                self.lbl_verify_result.setText(
-                    f"<span style='color: #10b981; font-weight: bold;'>Gültig aufgelöst:</span> "
-                    f"<code>{call_code}</code> &nbsp;<span style='color: #64748b;'>(Phasen: {', '.join(res['allowed_phases'])})</span>"
-                )
-            else:
-                self.lbl_verify_result.setText(
-                    f"<span style='color: #f59e0b; font-weight: bold;'>Warnung:</span> "
-                    f"Satz wurde nicht zu '{self.current_selected_op.name}', sondern zu '<code>{op_name}</code>' aufgelöst."
-                )
-            return True, op_name, args, None
-        else:
-            err = res.get('error', 'Unbekannter Fehler')
-            self.lbl_verify_result.setText(
-                f"<span style='color: #ef4444; font-weight: bold;'>Fehler beim Auflösen:</span> {err}"
-            )
-            return False, None, {}, err
 
     @property
     def current_op_name(self) -> str | None:
         return self.current_selected_op.name if self.current_selected_op else None
 
     @property
-    def table_templates(self) -> QTableWidget:
-        return self.tmpl_table
+    def view_operations(self):
+        return self
 
     @property
-    def txt_preview_sentence(self) -> QLineEdit:
-        return self.lbl_generated_sentence
+    def table_templates(self) -> QTableWidget:
+        return self.tmpl_table
 
     def select_operation_by_name(self, op_name: str):
         for i in range(self.op_list.count()):
@@ -468,13 +292,6 @@ class CatalogWorkspace(QWidget):
             if item.data(Qt.ItemDataRole.UserRole) == op_name:
                 self.op_list.setCurrentRow(i)
                 return
-
-    def insert_into_active_specification(self):
-        """Emit verified sentence to be inserted into the open specification editor."""
-        sentence = self.lbl_generated_sentence.text().strip()
-        if not sentence:
-            return
-        self.insert_sentence_into_spec.emit(sentence)
 
     def create_mapping_for_current_op(self):
         if not self.current_selected_op:
@@ -499,7 +316,6 @@ class CatalogWorkspace(QWidget):
         )
         if dialog.exec():
             updated = dialog.get_result_item()
-            # Find index
             for idx, m in enumerate(self.state.mappings):
                 if m.id == self.current_selected_mapping.id:
                     self.state.update_mapping(idx, updated)

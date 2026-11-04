@@ -137,7 +137,6 @@ class MappingStudioWindow(QMainWindow):
         # Workspace 2: Operationskatalog (Mappings & Operationen)
         self.workspace_catalog = CatalogWorkspace(self.state, on_change=self.on_state_changed, parent=self)
         self.workspace_catalog.test_sentence_requested.connect(self.switch_to_tester_with_sentence)
-        self.workspace_catalog.insert_sentence_into_spec.connect(self.on_insert_sentence_from_catalog)
         self.tabs.addTab(self.workspace_catalog, "Operationskatalog")
 
         # Workspace 3: Satzprüfung
@@ -222,12 +221,6 @@ class MappingStudioWindow(QMainWindow):
     def switch_to_tester_with_sentence(self, sentence: str):
         self.tabs.setCurrentIndex(2)
         self.workspace_tester.set_sentence(sentence)
-
-    def on_insert_sentence_from_catalog(self, sentence: str):
-        """Switch to specification editor and insert the verified sentence at cursor."""
-        self.tabs.setCurrentIndex(0)
-        self.workspace_specs.insert_statement_at_cursor(sentence)
-        self.status_bar.showMessage("Satz in Spezifikation eingefügt", 4000)
 
     def switch_project_profile(self, profile: ProjectProfile, prompt_save: bool = True):
         if prompt_save:

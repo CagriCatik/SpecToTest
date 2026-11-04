@@ -115,3 +115,4 @@ def build_smart_param_widget(
     line_edit = QLineEdit(default_text)
     line_edit.textChanged.connect(on_change)
     return SmartParamWidget(line_edit, None)
+
